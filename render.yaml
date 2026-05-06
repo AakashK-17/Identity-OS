@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: identity-os-resume
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 8787
+      - key: OUTPUT_ROOT
+        value: /app/runs/generated
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false

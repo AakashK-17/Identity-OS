@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+
+.env
+.env.*
+!.env.example
+
+data/
+uploads/
+runs/
+
+*.docx
+job_description.txt
+
+*.log
+.DS_Store
+Thumbs.db
