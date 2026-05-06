@@ -4,17 +4,27 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Identity OS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <canvas id="field" aria-hidden="true"></canvas>
+    <div class="grid-bg" aria-hidden="true"></div>
+    <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
 
     <header class="topbar">
       <a class="brand" href="#home" aria-label="Identity OS home">
         <span class="brand-mark"></span>
         <span>Identity OS</span>
       </a>
-      <nav>
+      <nav class="public-nav">
+        <a href="#how">How it works</a>
+        <a href="#system-preview">The system</a>
+        <a href="#home">Workspace</a>
+      </nav>
+      <nav class="app-nav">
         <a href="#workspace">Workspace</a>
         <a href="#history">History</a>
         <a href="#system">System</a>
@@ -28,31 +38,83 @@
     </header>
 
     <main>
-      <section class="landing" id="home">
-        <div class="landing-copy">
+      <section class="landing public-only" id="home">
+        <div class="landing-copy layer-card">
           <p class="eyebrow">Professional Identity Engineering</p>
-          <h1>Job search, organized around your next interview.</h1>
+          <h1>Your resume, <span>rewritten</span> for every role.</h1>
           <p class="lede">
-            A calm intelligence workspace that rewrites your resume for each role, stores every version, and keeps the JD, company, and role in one searchable timeline.
+            A calm intelligence workspace that rewrites your resume for each job description, stores every version, and keeps the JD, company, and role in one searchable timeline.
           </p>
           <div class="hero-actions">
-            <button type="button" id="hero-signin">Continue with Google</button>
-            <a href="#workspace">Explore workspace</a>
+            <button class="btn-primary" type="button" id="hero-signin">Get started - it is free</button>
+            <button class="btn-link" type="button" id="hero-signin-secondary">Continue with Google</button>
+          </div>
+          <div class="meta-row">
+            <span><b>DOCX</b> + PDF</span>
+            <span><b>Role</b> memory</span>
+            <span><b>ATS</b> aligned</span>
           </div>
         </div>
-        <div class="hero-orbit" aria-hidden="true">
-          <div class="glass-sphere">
-            <span></span>
-            <span></span>
-            <span></span>
+        <div class="orb-stage" aria-hidden="true">
+          <svg class="connect-svg" viewBox="0 0 500 500" preserveAspectRatio="none">
+            <g stroke="rgba(80,75,55,.18)" stroke-width=".8" fill="none">
+              <path d="M50,120 Q200,60 380,180" />
+              <path d="M30,300 Q180,260 420,340" />
+              <path d="M100,400 Q260,380 460,260" />
+              <path d="M250,40 Q300,200 200,460" />
+            </g>
+          </svg>
+          <div class="orb">
+            <div class="orb-core"></div>
           </div>
-          <div class="floating-note note-one">ATS signal</div>
-          <div class="floating-note note-two">Hiring risk</div>
-          <div class="floating-note note-three">Resume version</div>
+          <div class="chip chip-1"><span></span>JD parsed</div>
+          <div class="chip chip-2"><span></span>ATS signal</div>
+          <div class="chip chip-3"><span></span>Resume v.07</div>
+          <div class="chip chip-4"><span></span>Hiring fit 92</div>
         </div>
       </section>
 
-      <section class="workspace" id="workspace">
+      <section class="public-block public-only" id="how">
+        <div class="sec-head">
+          <div>
+            <p class="sec-label">/ how it works</p>
+            <h2>Four moves from JD to interview-ready PDF.</h2>
+          </div>
+          <p>Build your foundation once. Paste a job description. Identity OS analyses the role, rewrites your resume to match, and saves the full application artifact into your history.</p>
+        </div>
+        <div class="steps">
+          <article class="step"><span>01 / FOUNDATION</span><h3>Build your base profile.</h3><p>Identity, experience, projects, skills, education, and certifications are stored once under your account.</p></article>
+          <article class="step"><span>02 / SIGNAL</span><h3>Paste any job description.</h3><p>The system extracts role, company, tools, hidden hiring signals, and seniority cues.</p></article>
+          <article class="step"><span>03 / REWRITE</span><h3>Tailor the resume.</h3><p>Summary, bullets, projects, and core competencies are rewritten without inventing facts.</p></article>
+          <article class="step"><span>04 / MEMORY</span><h3>Download and track.</h3><p>DOCX, PDF, JD, company, role, and timestamp are saved into searchable history.</p></article>
+        </div>
+      </section>
+
+      <section class="public-block public-only" id="system-preview">
+        <div class="sec-head">
+          <div>
+            <p class="sec-label">/ the system</p>
+            <h2>One workspace for a real job search.</h2>
+          </div>
+          <p>Not a one-shot generator. Identity OS treats your search as infrastructure: profile, tailoring engine, and permanent application record.</p>
+        </div>
+        <div class="features">
+          <article class="feature-card wide"><span>/ JD INTELLIGENCE</span><h3>Reads the job like a hiring manager.</h3><p>Maps tools, requirements, risk signals, and keywords to evidence in your base profile.</p><div class="jd-mock">01 Senior Data Scientist · Remote<br />02 Must have Python, SQL, ML<br />03 Build dashboards and reports<br />04 Communicate insights to teams</div></article>
+          <article class="feature-card dark"><span>/ TAILORED REWRITE</span><h3>Bullets, sharpened.</h3><p>Honest rewrites of your real work, re-ordered and re-weighted for the JD language.</p></article>
+          <article class="feature-card"><span>/ HISTORY</span><h3>Every version, filed.</h3><p>Company, role, JD, DOCX, and PDF are saved automatically for each signed-in user.</p></article>
+        </div>
+        <div class="cta-banner">
+          <div>
+            <p class="sec-label">/ ready when you are</p>
+            <h2>Stop rewriting. Start interviewing.</h2>
+            <p>Sign in with Google, build your foundation, and turn the next JD into a tracked resume artifact.</p>
+            <button class="btn-primary" type="button" id="landing-bottom-signin">Continue with Google</button>
+          </div>
+          <div class="cta-orb" aria-hidden="true"><span></span></div>
+        </div>
+      </section>
+
+      <section class="workspace app-only" id="workspace">
         <div class="intro">
           <div class="sphere-shell">
             <div class="resume-sphere" aria-hidden="true">
@@ -179,7 +241,7 @@
         </form>
       </section>
 
-      <section class="review" id="history">
+      <section class="review app-only" id="history">
         <div class="review-shell">
           <div class="status-panel" id="status-panel">
             <div class="orbital"></div>
@@ -207,7 +269,7 @@
         </div>
       </section>
 
-      <section class="workflow" id="system">
+      <section class="workflow app-only" id="system">
         <div>
           <p class="eyebrow">Operating Model</p>
           <h2>Understand, position, produce, remember.</h2>

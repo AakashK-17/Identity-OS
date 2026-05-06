@@ -10,6 +10,8 @@ const inlineStatus = document.querySelector("#inline-status");
 const buttonText = document.querySelector(".button-text");
 const signinOpen = document.querySelector("#signin-open");
 const heroSignin = document.querySelector("#hero-signin");
+const heroSigninSecondary = document.querySelector("#hero-signin-secondary");
+const landingBottomSignin = document.querySelector("#landing-bottom-signin");
 const signinModal = document.querySelector("#signin-modal");
 const signinClose = document.querySelector("#signin-close");
 const googleClientIdInput = document.querySelector("#google-client-id");
@@ -148,6 +150,7 @@ function closeSignin() {
 function applyUser(profile) {
   state.user = profile;
   localStorage.setItem("identity-os-user", JSON.stringify(profile));
+  document.body.classList.add("signed-in");
   if (userEmail) userEmail.value = profile.email || "";
   if (userName) userName.textContent = (profile.name || profile.email || "User").split(" ")[0];
   if (userAvatar) userAvatar.textContent = (profile.name || profile.email || "U").trim().charAt(0).toUpperCase();
@@ -163,6 +166,7 @@ function logout() {
   state.user = null;
   state.history = [];
   state.profile = null;
+  document.body.classList.remove("signed-in");
   localStorage.removeItem("identity-os-user");
   if (userEmail) userEmail.value = "";
   if (userChip) userChip.classList.add("hidden");
@@ -171,6 +175,7 @@ function logout() {
   hydrateProfile({});
   renderHistory();
   setInlineStatus("", "Signed out. The workspace is ready for the next user.");
+  document.querySelector("#home")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function decodeJwtPayload(token) {
@@ -207,6 +212,7 @@ async function saveGoogleProfile(credentialResponse) {
   renderHistory();
   await loadProfile();
   closeSignin();
+  document.querySelector("#workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function loadGoogleScript() {
@@ -488,6 +494,8 @@ async function loadProfile() {
 
 signinOpen?.addEventListener("click", openSignin);
 heroSignin?.addEventListener("click", openSignin);
+heroSigninSecondary?.addEventListener("click", openSignin);
+landingBottomSignin?.addEventListener("click", openSignin);
 signinClose?.addEventListener("click", closeSignin);
 logoutButton?.addEventListener("click", logout);
 historySearch?.addEventListener("input", renderHistory);
@@ -588,3 +596,9 @@ fetch("/api/config")
 loadHistory();
 loadProfile();
 window.addEventListener("resize", resize);
+window.addEventListener("scroll", () => {
+  const progress = document.querySelector("#scroll-progress");
+  if (!progress) return;
+  const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+  progress.style.setProperty("--p", `${Math.min(100, (window.scrollY / max) * 100)}%`);
+});
