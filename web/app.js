@@ -50,7 +50,98 @@ const state = {
   googleClientId: "",
   googleLoaded: false,
   profile: null,
+  identityScenesStarted: false,
 };
+
+function initAmbientField() {
+  const canvas = document.querySelector("#ambient-canvas");
+  if (!canvas) return;
+  const ambientCtx = canvas.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let points = [];
+
+  function size() {
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
+    ambientCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    points = Array.from({ length: 120 }, (_, index) => ({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      r: 0.7 + (index % 4) * 0.35,
+      s: 0.12 + (index % 7) * 0.015,
+    }));
+  }
+
+  function paint() {
+    ambientCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    ambientCtx.fillStyle = "rgba(93, 97, 74, 0.12)";
+    for (const point of points) {
+      point.y += point.s;
+      if (point.y > window.innerHeight + 10) point.y = -10;
+      ambientCtx.beginPath();
+      ambientCtx.arc(point.x, point.y, point.r, 0, Math.PI * 2);
+      ambientCtx.fill();
+    }
+    requestAnimationFrame(paint);
+  }
+
+  size();
+  paint();
+  window.addEventListener("resize", size);
+}
+
+function initIdentityEngine() {
+  if (state.identityScenesStarted) return;
+  state.identityScenesStarted = true;
+
+  const loader = document.querySelector("#ld-shell");
+  const hideLoader = () => loader?.classList.add("gone");
+  setTimeout(hideLoader, 3200);
+
+  initAmbientField();
+
+  const boot = () => {
+    if (!window.THREE || !window.IdentityOS) {
+      setTimeout(boot, 40);
+      return;
+    }
+
+    const loaderCanvas = document.querySelector("#ld-canvas");
+    if (loaderCanvas) {
+      window.IdentityOS.CoreScene(loaderCanvas, {
+        palette: "dark",
+        intensity: 1.35,
+        interactive: false,
+      });
+    }
+
+    const heroCanvas = document.querySelector("#hero-canvas");
+    if (heroCanvas) {
+      window.IdentityOS.CoreScene(heroCanvas, {
+        palette: "warm",
+        intensity: 1,
+      });
+    }
+
+    const ctaCanvas = document.querySelector("#cta-canvas");
+    if (ctaCanvas) {
+      window.IdentityOS.CoreScene(ctaCanvas, {
+        palette: "dark",
+        intensity: 1.15,
+      });
+    }
+
+    document.querySelectorAll("canvas.mini").forEach((mini) => {
+      window.IdentityOS.MiniScene(mini, mini.dataset.mini || "artifact");
+    });
+
+    setTimeout(hideLoader, 2400);
+  };
+
+  boot();
+}
 
 function resize() {
   state.width = window.innerWidth;
@@ -579,6 +670,7 @@ if (state.user) {
 
 resize();
 draw();
+initIdentityEngine();
 fetch("/api/config")
   .then((response) => response.json())
   .then((config) => {
