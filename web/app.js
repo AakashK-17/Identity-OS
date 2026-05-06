@@ -19,6 +19,7 @@ const userChip = document.querySelector("#user-chip");
 const userAvatar = document.querySelector("#user-avatar");
 const userName = document.querySelector("#user-name");
 const userEmail = document.querySelector("#user-email");
+const logoutButton = document.querySelector("#logout-button");
 const historyList = document.querySelector("#history-list");
 const historyCount = document.querySelector("#history-count");
 const historySearch = document.querySelector("#history-search");
@@ -44,7 +45,7 @@ const state = {
   time: 0,
   user: JSON.parse(localStorage.getItem("identity-os-user") || "null"),
   history: [],
-  googleClientId: localStorage.getItem("identity-os-google-client-id") || "",
+  googleClientId: "",
   googleLoaded: false,
   profile: null,
 };
@@ -137,7 +138,6 @@ function setInlineStatus(kind, copy) {
 
 function openSignin() {
   signinModal.classList.remove("hidden");
-  googleClientIdInput.value = state.googleClientId;
   renderGoogleButton();
 }
 
@@ -153,6 +153,24 @@ function applyUser(profile) {
   if (userAvatar) userAvatar.textContent = (profile.name || profile.email || "U").trim().charAt(0).toUpperCase();
   if (userChip) userChip.classList.remove("hidden");
   if (signinOpen) signinOpen.classList.add("hidden");
+  if (heroSignin) heroSignin.classList.add("hidden");
+}
+
+function logout() {
+  if (window.google?.accounts?.id) {
+    window.google.accounts.id.disableAutoSelect();
+  }
+  state.user = null;
+  state.history = [];
+  state.profile = null;
+  localStorage.removeItem("identity-os-user");
+  if (userEmail) userEmail.value = "";
+  if (userChip) userChip.classList.add("hidden");
+  if (signinOpen) signinOpen.classList.remove("hidden");
+  if (heroSignin) heroSignin.classList.remove("hidden");
+  hydrateProfile({});
+  renderHistory();
+  setInlineStatus("", "Signed out. The workspace is ready for the next user.");
 }
 
 function decodeJwtPayload(token) {
@@ -215,16 +233,15 @@ function loadGoogleScript() {
 }
 
 async function renderGoogleButton() {
-  const clientId = googleClientIdInput.value.trim();
+  const clientId = state.googleClientId || googleClientIdInput?.value?.trim() || "";
   googleButtonHost.innerHTML = "";
 
   if (!clientId) {
-    if (signinHelp) signinHelp.textContent = "Paste your Google OAuth Web Client ID to render the real Google sign-in button.";
+    if (signinHelp) signinHelp.textContent = "Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID in the deployment environment.";
     return;
   }
 
   state.googleClientId = clientId;
-  localStorage.setItem("identity-os-google-client-id", clientId);
   if (signinHelp) signinHelp.textContent = "Google sign-in is ready. Use the button above with a Google account.";
 
   try {
@@ -414,10 +431,15 @@ function hydrateProfile(profile = {}) {
   educationList.innerHTML = "";
   certificationList.innerHTML = "";
 
+  ["name", "location", "email", "phone", "linkedin"].forEach((fieldName) => {
+    const input = form.querySelector(`[name="${fieldName}"]`);
+    if (input) input.value = "";
+  });
+
   const details = profile.details || {};
   for (const [name, value] of Object.entries(details)) {
     const input = form.querySelector(`[name="${name}"]`);
-    if (input && value) input.value = value;
+    if (input) input.value = value || "";
   }
 
   (profile.experiences || []).forEach((item) => addEntry("experience", item));
@@ -467,8 +489,7 @@ async function loadProfile() {
 signinOpen?.addEventListener("click", openSignin);
 heroSignin?.addEventListener("click", openSignin);
 signinClose?.addEventListener("click", closeSignin);
-googleClientIdInput?.addEventListener("change", renderGoogleButton);
-googleClientIdInput?.addEventListener("blur", renderGoogleButton);
+logoutButton?.addEventListener("click", logout);
 historySearch?.addEventListener("input", renderHistory);
 addExperienceButton?.addEventListener("click", () => addEntry("experience"));
 addProjectButton?.addEventListener("click", () => addEntry("project"));
@@ -553,9 +574,14 @@ draw();
 fetch("/api/config")
   .then((response) => response.json())
   .then((config) => {
-    if (config.google_client_id && !state.googleClientId) {
+    if (config.google_client_id) {
       state.googleClientId = config.google_client_id;
-      localStorage.setItem("identity-os-google-client-id", state.googleClientId);
+      if (googleClientIdInput) googleClientIdInput.value = state.googleClientId;
+    }
+  })
+  .then(() => {
+    if (!signinModal.classList.contains("hidden")) {
+      renderGoogleButton();
     }
   })
   .catch(() => {});

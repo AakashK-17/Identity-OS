@@ -23,6 +23,7 @@
       <div class="user-chip hidden" id="user-chip">
         <span id="user-avatar">A</span>
         <strong id="user-name">Aakash</strong>
+        <button id="logout-button" type="button" aria-label="Log out">Log out</button>
       </div>
     </header>
 
@@ -236,13 +237,10 @@
         <button class="modal-close" id="signin-close" type="button" aria-label="Close">×</button>
         <p class="eyebrow">Onboarding</p>
         <h2 id="signin-title">Start your job-search memory.</h2>
-        <p>Use your Google OAuth Web Client ID to enable real Sign in with Google on localhost.</p>
-        <label>
-          <span>Google Client ID</span>
-          <input id="google-client-id" placeholder="1234567890-abc.apps.googleusercontent.com" autocomplete="off" />
-        </label>
+        <p>Sign in once. Your base resume, generated resumes, job descriptions, companies, and roles stay organized under your account.</p>
+        <input id="google-client-id" type="hidden" autocomplete="off" />
         <div class="google-host" id="google-button-host"></div>
-        <p class="signin-help" id="signin-help">Create an OAuth web client in Google Cloud, add <strong>http://127.0.0.1:8787</strong> as an authorized JavaScript origin, then paste the Client ID here.</p>
+        <p class="signin-help" id="signin-help">Google sign-in is loading.</p>
       </div>
     </div>
 

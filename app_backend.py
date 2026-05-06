@@ -22,7 +22,7 @@ UPLOAD_DIR = ROOT / "uploads"
 RUN_DIR = ROOT / "runs"
 DATA_DIR = ROOT / "data"
 HISTORY_FILE = DATA_DIR / "history.json"
-OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", RUN_DIR / "generated")).resolve()
+OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", DATA_DIR / "generated")).resolve()
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 RUN_DIR.mkdir(exist_ok=True)
@@ -111,6 +111,15 @@ def add_history_item(email: str, item: dict) -> None:
 def get_history_items(email: str) -> list[dict]:
     data = load_history()
     return data.get("users", {}).get(user_key(email), {}).get("items", [])
+
+
+def find_history_item(run_id: str) -> dict | None:
+    data = load_history()
+    for record in data.get("users", {}).values():
+        for item in record.get("items", []):
+            if item.get("id") == run_id:
+                return item
+    return None
 
 
 def save_uploaded_file(field, destination: Path) -> Path | None:
@@ -274,11 +283,12 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
 
         _, _, run_id, kind = parts
         result = RESULTS.get(run_id)
-        if not result:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-
-        target = result.get("docx_path") if kind == "docx" else result.get("pdf_path")
+        history_item = find_history_item(run_id) if not result else None
+        target = (
+            result.get("docx_path") if kind == "docx" else result.get("pdf_path")
+        ) if result else (
+            history_item.get("docx_path") if kind == "docx" else history_item.get("pdf_path")
+        )
         if not target:
             self.send_error(HTTPStatus.NOT_FOUND)
             return

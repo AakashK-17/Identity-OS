@@ -140,7 +140,7 @@ OPENAI_API_KEY=your OpenAI API key
 GOOGLE_CLIENT_ID=your Google OAuth Web Client ID
 HOST=0.0.0.0
 PORT=8787
-OUTPUT_ROOT=/app/runs/generated
+OUTPUT_ROOT=/app/data/generated
 ```
 
 5. In Google Cloud Console, create an OAuth Web Client ID.
@@ -159,5 +159,6 @@ docker build -t identity-os-resume .
 docker run --rm -p 8787:8787 --env-file .env.example identity-os-resume
 ```
 
-Production note: the current history store is a local JSON file. For a real multi-user product,
-move history and base resume profiles to Postgres/Supabase so data survives redeploys and scales safely.
+Production note: Render uses the configured persistent disk at `/app/data` for saved profiles,
+history, and generated resume files. For a larger product, move this data to Postgres/Supabase
+so it scales safely across multiple app instances.
