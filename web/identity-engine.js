@@ -51,7 +51,7 @@
       : { core1: 0xddd6c0, core2: 0x7d8064, ring: 0x5d614a, glyph: 0x2a2823, thread: 0x7d8064, bg: 0x000000, bgAlpha: 0 };
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true, powerPreference:'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
     renderer.setClearColor(colors.bg, colors.bgAlpha);
 
     const scene = new THREE.Scene();
@@ -62,18 +62,18 @@
     const coreGroup = new THREE.Group();
     scene.add(coreGroup);
 
-    const innerGeom = new THREE.SphereGeometry(1.05, 64, 64);
+    const innerGeom = new THREE.SphereGeometry(1.05, 32, 24);
     const innerMat  = new THREE.MeshBasicMaterial({ color: colors.core1, transparent:true, opacity: .15 * intensity });
     const innerMesh = new THREE.Mesh(innerGeom, innerMat);
     coreGroup.add(innerMesh);
 
-    const wireGeom = new THREE.SphereGeometry(1.4, 32, 24);
+    const wireGeom = new THREE.SphereGeometry(1.4, 22, 16);
     const wireMat  = new THREE.MeshBasicMaterial({ color: colors.core2, wireframe:true, transparent:true, opacity: .35 * intensity });
     const wireMesh = new THREE.Mesh(wireGeom, wireMat);
     coreGroup.add(wireMesh);
 
     // hot core particle cluster
-    const coreParticleCount = 600;
+    const coreParticleCount = 260;
     const cpGeom = new THREE.BufferGeometry();
     const cpPos = new Float32Array(coreParticleCount * 3);
     for (let i=0;i<coreParticleCount;i++){
@@ -111,7 +111,7 @@
         rings.push(ring);
 
         // tracer dot on the ring
-        const dotGeom = new THREE.SphereGeometry(0.05, 12, 12);
+        const dotGeom = new THREE.SphereGeometry(0.05, 8, 8);
         const dotMat  = new THREE.MeshBasicMaterial({ color: colors.core1, transparent:true, opacity: .9 * intensity });
         const dot = new THREE.Mesh(dotGeom, dotMat);
         dot.userData = { radius: d.r, speed: d.speed * 4, phase: Math.random()*Math.PI*2, ring };
@@ -124,7 +124,7 @@
     let glyphPoints = null;
     if (showGlyphs){
       const tex = makeGlyphTexture();
-      const N = 80;
+      const N = 32;
       const gPos = new Float32Array(N*3);
       const gOff = new Float32Array(N);
       for (let i=0;i<N;i++){
@@ -151,7 +151,7 @@
     // ---- Connection threads (form/dissolve) ----
     const threads = [];
     if (showThreads){
-      const THREAD_COUNT = 6;
+      const THREAD_COUNT = 3;
       for (let i=0;i<THREAD_COUNT;i++){
         const g = new THREE.BufferGeometry();
         const pts = new Float32Array(2*3);
@@ -299,7 +299,7 @@
   // -----------------------------
   function MiniScene(canvas, mode){
     const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     cam.position.set(0,0,4);
@@ -320,7 +320,7 @@
       obj = g;
     } else if (mode === 'signal'){
       // waveform
-      const N = 80;
+      const N = 48;
       const pts = new Float32Array(N*3);
       for (let i=0;i<N;i++){ pts[i*3]= -1+ (i/(N-1))*2; pts[i*3+1]=0; pts[i*3+2]=0; }
       const g = new THREE.BufferGeometry();
@@ -329,7 +329,7 @@
       obj.userData = { type:'wave', N };
     } else if (mode === 'rewrite'){
       // particle swap
-      const N = 200;
+      const N = 90;
       const pts = new Float32Array(N*3);
       for (let i=0;i<N;i++){
         pts[i*3]= (Math.random()-0.5)*1.6;
@@ -370,10 +370,10 @@
     ro.observe(canvas.parentElement || canvas);
     resize();
 
-    let t0 = performance.now(), running = true;
+    let t0 = performance.now(), running = true, raf = null;
     function tick(){
       if (!running) return;
-      requestAnimationFrame(tick);
+      raf = requestAnimationFrame(tick);
       const t = (performance.now()-t0)/1000;
       if (obj.userData && obj.userData.type === 'wave'){
         const arr = obj.geometry.attributes.position.array;
@@ -394,8 +394,12 @@
       }
       renderer.render(scene, cam);
     }
-    requestAnimationFrame(tick);
-    return { pause(){ running=false; }, resume(){ if(!running){ running=true; requestAnimationFrame(tick);} } };
+    raf = requestAnimationFrame(tick);
+    return {
+      pause(){ running=false; if (raf) cancelAnimationFrame(raf); },
+      resume(){ if(!running){ running=true; raf=requestAnimationFrame(tick);} },
+      destroy(){ running=false; if (raf) cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); }
+    };
   }
 
   global.IdentityOS = { CoreScene, MiniScene, ready };

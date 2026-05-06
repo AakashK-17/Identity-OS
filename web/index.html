@@ -115,17 +115,62 @@
       </section>
 
       <section class="public-block public-only" id="system-preview">
-        <div class="sec-head">
+        <div class="sec-head system-head">
           <div>
             <p class="sec-label">/ the system</p>
-            <h2>One workspace for a real job search.</h2>
+            <h2>One workspace <span class="serif-word">for</span> a real job search.</h2>
           </div>
-          <p>Not a one-shot generator. Identity OS treats your search as infrastructure: profile, tailoring engine, and permanent application record.</p>
+          <p>Not a one-shot generator. Identity OS treats your search as infrastructure: a structured profile, a tailoring engine, and a permanent record of every application.</p>
         </div>
-        <div class="features">
-          <article class="feature-card wide"><span>/ JD INTELLIGENCE</span><h3>Reads the job like a hiring manager.</h3><p>Maps tools, requirements, risk signals, and keywords to evidence in your base profile.</p><div class="jd-mock">01 Senior Data Scientist · Remote<br />02 Must have Python, SQL, ML<br />03 Build dashboards and reports<br />04 Communicate insights to teams</div></article>
-          <article class="feature-card dark"><span>/ TAILORED REWRITE</span><h3>Bullets, sharpened.</h3><p>Honest rewrites of your real work, re-ordered and re-weighted for the JD language.</p></article>
-          <article class="feature-card"><span>/ HISTORY</span><h3>Every version, filed.</h3><p>Company, role, JD, DOCX, and PDF are saved automatically for each signed-in user.</p></article>
+        <div class="features system-grid">
+          <article class="feature-card card-wide">
+            <span>/ JD INTELLIGENCE</span>
+            <h3>Reads the job like a hiring manager.</h3>
+            <p>Pulls the must-haves, the nice-to-haves, the disguised seniority, and the keyword surface that ATS filters care about, then maps each one to evidence in your base profile.</p>
+            <div class="jd-mock">
+              <div><b>01</b><span>Senior <mark>Data Scientist</mark> · Remote (US)</span></div>
+              <div><b>02</b><span>You will own end-to-end <mark>ML systems</mark> work...</span></div>
+              <div><b>03</b><span>5+ years shipping <mark>Python</mark>, SQL, dashboards</span></div>
+              <div><b>04</b><span>Fluent in <mark>experimentation</mark>, reporting, AI</span></div>
+              <div><b>05</b><span>Bonus: <mark>AWS</mark>, stakeholder communication</span></div>
+            </div>
+          </article>
+          <article class="feature-card card-dark">
+            <span>/ TAILORED REWRITE</span>
+            <h3>Bullets, sharpened.</h3>
+            <p>Honest rewrites of your real bullets, re-ordered, re-weighted, and mapped to the JD's language.</p>
+            <div class="rewrite-mock">
+              <div class="minus">- Worked on dashboards.</div>
+              <div class="plus">+ Built reporting views used by marketing teams.</div>
+              <div class="minus">- Used Python daily.</div>
+              <div class="plus">+ Cleaned survey data with Python and SQL.</div>
+            </div>
+          </article>
+          <article class="feature-card">
+            <span>/ APPLICATION HISTORY</span>
+            <h3>Every version, filed.</h3>
+            <p>Auto-saves company, role, JD, DOCX, and PDF so every application stays searchable across your search.</p>
+            <div class="history-mock">
+              <div><strong>Stripe</strong><span>Data Scientist</span><em>may 04</em></div>
+              <div><strong>Linear</strong><span>Analytics Engineer</span><em>apr 28</em></div>
+              <div><strong>Notion</strong><span>Product Analyst</span><em>apr 22</em></div>
+            </div>
+          </article>
+          <article class="feature-card">
+            <span>/ FORMATS</span>
+            <h3>DOCX & PDF, professionally formatted.</h3>
+            <p>One-column, ATS-friendly layouts. Recruiter-readable output that does not break in Word.</p>
+            <div class="format-grid">
+              <div><strong>.DOCX</strong><span>resume_role_v07.docx</span></div>
+              <div><strong>.PDF</strong><span>resume_role_v07.pdf</span></div>
+            </div>
+          </article>
+          <article class="feature-card">
+            <span>/ PRIVACY</span>
+            <h3>Your foundation stays yours.</h3>
+            <p>Profile data is stored under your Google identity, scoped to your account, and separated from every other user.</p>
+            <div class="privacy-foot"><span aria-hidden="true">□</span> encrypted · scoped · revocable</div>
+          </article>
         </div>
         <div class="cta-banner">
           <canvas id="cta-canvas" aria-hidden="true"></canvas>
@@ -320,14 +365,36 @@
     </main>
 
     <div class="modal hidden" id="signin-modal" role="dialog" aria-modal="true" aria-labelledby="signin-title">
-      <div class="modal-card">
-        <button class="modal-close" id="signin-close" type="button" aria-label="Close">×</button>
-        <p class="eyebrow">Onboarding</p>
-        <h2 id="signin-title">Start your job-search memory.</h2>
-        <p>Sign in once. Your base resume, generated resumes, job descriptions, companies, and roles stay organized under your account.</p>
-        <input id="google-client-id" type="hidden" autocomplete="off" />
-        <div class="google-host" id="google-button-host"></div>
-        <p class="signin-help" id="signin-help">Google sign-in is loading.</p>
+      <div class="modal-card onboard-card">
+        <aside class="onboard-side">
+          <div class="onboard-brand"><span></span><strong>Identity OS</strong></div>
+          <p>STEP 01 / 04</p>
+          <h3>Sign in to begin.</h3>
+          <small>Google sign-in keeps your foundation tied to a single, secure identity.</small>
+          <ol class="onboard-steps">
+            <li class="active"><span>1</span>Sign in</li>
+            <li><span>2</span>Identity</li>
+            <li><span>3</span>Experience</li>
+            <li><span>4</span>Skills & focus</li>
+          </ol>
+        </aside>
+        <section class="onboard-main">
+          <button class="modal-close" id="signin-close" type="button" aria-label="Close">×</button>
+          <h2 id="signin-title">Welcome to your workspace.</h2>
+          <p>Sign in with Google so your base resume, generated versions, and application history stay scoped to you across devices.</p>
+          <input id="google-client-id" type="hidden" autocomplete="off" />
+          <div class="google-host" id="google-button-host"></div>
+          <div class="or-rule"><span>OR</span></div>
+          <label class="email-field">
+            <span>Email</span>
+            <input id="signin-email" type="email" placeholder="you@company.com" autocomplete="email" />
+          </label>
+          <p class="signin-help" id="signin-help">Google sign-in is loading.</p>
+          <div class="onboard-actions">
+            <button class="skip-link" id="signin-later" type="button">Maybe later</button>
+            <button class="btn-go" id="signin-continue" type="button">Continue <span>→</span></button>
+          </div>
+        </section>
       </div>
     </div>
 

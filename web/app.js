@@ -14,6 +14,8 @@ const heroSigninSecondary = document.querySelector("#hero-signin-secondary");
 const landingBottomSignin = document.querySelector("#landing-bottom-signin");
 const signinModal = document.querySelector("#signin-modal");
 const signinClose = document.querySelector("#signin-close");
+const signinLater = document.querySelector("#signin-later");
+const signinContinue = document.querySelector("#signin-continue");
 const googleClientIdInput = document.querySelector("#google-client-id");
 const googleButtonHost = document.querySelector("#google-button-host");
 const signinHelp = document.querySelector("#signin-help");
@@ -51,6 +53,7 @@ const state = {
   googleLoaded: false,
   profile: null,
   identityScenesStarted: false,
+  identityScenes: [],
 };
 
 function initAmbientField() {
@@ -59,6 +62,7 @@ function initAmbientField() {
   const ambientCtx = canvas.getContext("2d");
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   let points = [];
+  let running = true;
 
   function size() {
     canvas.width = Math.floor(window.innerWidth * dpr);
@@ -66,7 +70,7 @@ function initAmbientField() {
     canvas.style.width = `${window.innerWidth}px`;
     canvas.style.height = `${window.innerHeight}px`;
     ambientCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    points = Array.from({ length: 120 }, (_, index) => ({
+    points = Array.from({ length: 48 }, (_, index) => ({
       x: Math.random() * window.innerWidth,
       y: Math.random() * window.innerHeight,
       r: 0.7 + (index % 4) * 0.35,
@@ -75,6 +79,10 @@ function initAmbientField() {
   }
 
   function paint() {
+    if (!running || document.hidden || document.body.classList.contains("signed-in")) {
+      setTimeout(() => requestAnimationFrame(paint), 500);
+      return;
+    }
     ambientCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     ambientCtx.fillStyle = "rgba(93, 97, 74, 0.12)";
     for (const point of points) {
@@ -90,6 +98,9 @@ function initAmbientField() {
   size();
   paint();
   window.addEventListener("resize", size);
+  document.addEventListener("visibilitychange", () => {
+    running = !document.hidden;
+  });
 }
 
 function initIdentityEngine() {
@@ -109,8 +120,9 @@ function initIdentityEngine() {
     }
 
     const loaderCanvas = document.querySelector("#ld-canvas");
+    let loaderScene = null;
     if (loaderCanvas) {
-      window.IdentityOS.CoreScene(loaderCanvas, {
+      loaderScene = window.IdentityOS.CoreScene(loaderCanvas, {
         palette: "dark",
         intensity: 1.35,
         interactive: false,
@@ -118,26 +130,66 @@ function initIdentityEngine() {
     }
 
     const heroCanvas = document.querySelector("#hero-canvas");
+    let heroScene = null;
     if (heroCanvas) {
-      window.IdentityOS.CoreScene(heroCanvas, {
+      heroScene = window.IdentityOS.CoreScene(heroCanvas, {
         palette: "warm",
         intensity: 1,
       });
     }
 
     const ctaCanvas = document.querySelector("#cta-canvas");
+    let ctaScene = null;
     if (ctaCanvas) {
-      window.IdentityOS.CoreScene(ctaCanvas, {
+      ctaScene = window.IdentityOS.CoreScene(ctaCanvas, {
         palette: "dark",
         intensity: 1.15,
       });
+      ctaScene.pause();
     }
 
+    const miniScenes = [];
     document.querySelectorAll("canvas.mini").forEach((mini) => {
-      window.IdentityOS.MiniScene(mini, mini.dataset.mini || "artifact");
+      const scene = window.IdentityOS.MiniScene(mini, mini.dataset.mini || "artifact");
+      scene.pause();
+      miniScenes.push({ element: mini, scene });
     });
 
-    setTimeout(hideLoader, 2400);
+    const sceneObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const scene = entry.target.__identityScene;
+        if (!scene) return;
+        if (entry.isIntersecting && !document.body.classList.contains("signed-in")) {
+          scene.resume();
+        } else {
+          scene.pause();
+        }
+      });
+    }, { threshold: 0.08 });
+
+    if (heroCanvas && heroScene) {
+      heroCanvas.__identityScene = heroScene;
+      sceneObserver.observe(heroCanvas);
+    }
+    if (ctaCanvas && ctaScene) {
+      ctaCanvas.__identityScene = ctaScene;
+      sceneObserver.observe(ctaCanvas);
+    }
+    miniScenes.forEach(({ element, scene }) => {
+      element.__identityScene = scene;
+      sceneObserver.observe(element);
+    });
+
+    const scenes = [heroScene, ctaScene, ...miniScenes.map((item) => item.scene)].filter(Boolean);
+    state.identityScenes = scenes;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) scenes.forEach((scene) => scene.pause());
+    });
+
+    setTimeout(() => {
+      hideLoader();
+      loaderScene?.destroy?.();
+    }, 2400);
   };
 
   boot();
@@ -166,6 +218,12 @@ function resize() {
 }
 
 function draw() {
+  if (!document.body.classList.contains("signed-in")) {
+    ctx.clearRect(0, 0, state.width, state.height);
+    setTimeout(() => requestAnimationFrame(draw), 500);
+    return;
+  }
+
   state.time += 0.01;
   state.targetScroll = window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight);
   state.scroll += (state.targetScroll - state.scroll) * 0.08;
@@ -238,6 +296,15 @@ function closeSignin() {
   signinModal.classList.add("hidden");
 }
 
+function pauseIdentityScenes() {
+  (state.identityScenes || []).forEach((scene) => scene.pause?.());
+}
+
+function resumeIdentityScenes() {
+  if (document.hidden) return;
+  (state.identityScenes || []).forEach((scene) => scene.resume?.());
+}
+
 function applyUser(profile) {
   state.user = profile;
   localStorage.setItem("identity-os-user", JSON.stringify(profile));
@@ -248,6 +315,7 @@ function applyUser(profile) {
   if (userChip) userChip.classList.remove("hidden");
   if (signinOpen) signinOpen.classList.add("hidden");
   if (heroSignin) heroSignin.classList.add("hidden");
+  pauseIdentityScenes();
 }
 
 function logout() {
@@ -263,6 +331,7 @@ function logout() {
   if (userChip) userChip.classList.add("hidden");
   if (signinOpen) signinOpen.classList.remove("hidden");
   if (heroSignin) heroSignin.classList.remove("hidden");
+  resumeIdentityScenes();
   hydrateProfile({});
   renderHistory();
   setInlineStatus("", "Signed out. The workspace is ready for the next user.");
@@ -588,6 +657,8 @@ heroSignin?.addEventListener("click", openSignin);
 heroSigninSecondary?.addEventListener("click", openSignin);
 landingBottomSignin?.addEventListener("click", openSignin);
 signinClose?.addEventListener("click", closeSignin);
+signinLater?.addEventListener("click", closeSignin);
+signinContinue?.addEventListener("click", renderGoogleButton);
 logoutButton?.addEventListener("click", logout);
 historySearch?.addEventListener("input", renderHistory);
 addExperienceButton?.addEventListener("click", () => addEntry("experience"));
