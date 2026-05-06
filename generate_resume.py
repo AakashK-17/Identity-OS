@@ -10,6 +10,7 @@ from pathlib import Path
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.shared import Inches, Pt
 from docx.text.paragraph import Paragraph
@@ -407,14 +408,9 @@ def create_template_from_profile(profile: dict, template_path: Path) -> Path:
 
     details = profile.get("details", {})
     name = details.get("name") or "Candidate Name"
-    contact = " • ".join(
-        value for value in [
-            details.get("location", ""),
-            details.get("phone", ""),
-            details.get("email", ""),
-            details.get("linkedin", ""),
-        ]
-        if value
+    has_contact = any(
+        (details.get(key) or "").strip()
+        for key in ["location", "phone", "email", "linkedin"]
     )
 
     if not FORMAT_REFERENCE.exists() or len(doc.paragraphs) < 10:
@@ -555,6 +551,10 @@ def create_template_from_profile(profile: dict, template_path: Path) -> Path:
         ]
         if value
     )
+    has_contact = any(
+        (details.get(key) or "").strip()
+        for key in ["location", "phone", "email", "linkedin"]
+    )
 
     def set_spacing(paragraph, before=0, after=2.2, line_spacing=1.06):
         paragraph.paragraph_format.space_before = Pt(before)
@@ -594,8 +594,9 @@ def create_template_from_profile(profile: dict, template_path: Path) -> Path:
         return paragraph
 
     add_plain(name, bold=True, size=9.8, align=WD_ALIGN_PARAGRAPH.CENTER, after=2)
-    if contact:
-        add_plain(contact, size=9.6, align=WD_ALIGN_PARAGRAPH.CENTER, after=14)
+    if has_contact:
+        contact_paragraph = add_plain("", size=9.6, align=WD_ALIGN_PARAGRAPH.CENTER, after=14)
+        set_contact_line(contact_paragraph, details)
 
     add_section_heading("PROFESSIONAL SUMMARY")
     add_plain("{{SUMMARY}}", after=6)
@@ -685,6 +686,93 @@ def set_paragraph_text_preserve_first_run(paragraph, text: str) -> None:
         run._element.getparent().remove(run._element)
 
 
+def add_hyperlink(paragraph, text: str, url: str):
+    relationship_id = paragraph.part.relate_to(url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), relationship_id)
+
+    run = OxmlElement("w:r")
+    run_properties = OxmlElement("w:rPr")
+
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "000000")
+    run_properties.append(color)
+
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "none")
+    run_properties.append(underline)
+
+    bold = OxmlElement("w:b")
+    run_properties.append(bold)
+
+    run.append(run_properties)
+    text_element = OxmlElement("w:t")
+    text_element.text = text
+    run.append(text_element)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+    return hyperlink
+
+
+def normalize_linkedin_url(value: str) -> str:
+    value = (value or "").strip()
+    if not value or value.lower() == "linkedin":
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    if "linkedin.com" in value.lower():
+        return "https://" + value.lstrip("/")
+    return ""
+
+
+def set_contact_line(paragraph, details: dict) -> None:
+    paragraph.clear()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    parts = [
+        (details.get("location") or "").strip(),
+        (details.get("phone") or "").strip(),
+        (details.get("email") or "").strip(),
+    ]
+    parts = [part for part in parts if part]
+    linkedin_url = normalize_linkedin_url(details.get("linkedin", ""))
+
+    for index, part in enumerate(parts):
+        if index:
+            paragraph.add_run(" • ")
+        paragraph.add_run(part)
+
+    if linkedin_url or (details.get("linkedin") or "").strip():
+        if parts:
+            paragraph.add_run(" • ")
+        if linkedin_url:
+            add_hyperlink(paragraph, "LinkedIn", linkedin_url)
+        else:
+            paragraph.add_run("LinkedIn")
+
+    for run in paragraph.runs:
+        run.font.name = "Arial"
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), "Arial")
+        run.font.size = Pt(9.6)
+
+
+def update_contact_details(doc: Document, details: dict) -> None:
+    name = (details.get("name") or "").strip()
+    clean_details = {
+        "location": (details.get("location") or "").strip(),
+        "phone": (details.get("phone") or "").strip(),
+        "email": (details.get("email") or "").strip(),
+        "linkedin": (details.get("linkedin") or "").strip(),
+    }
+
+    if name and doc.paragraphs:
+        set_paragraph_text_preserve_first_run(doc.paragraphs[0], name)
+        doc.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    if any(clean_details.values()) and len(doc.paragraphs) > 1:
+        set_contact_line(doc.paragraphs[1], clean_details)
+
+
 def format_value(value) -> str:
     if isinstance(value, list):
         lines = []
@@ -743,6 +831,7 @@ def insert_formatted_paragraph_after(paragraph, text: str, style=None) -> Paragr
         except KeyError:
             pass
         apply_bullet(new_paragraph)
+    new_paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     add_text_with_bold(new_paragraph, text)
     return new_paragraph
 
