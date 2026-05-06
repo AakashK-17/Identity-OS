@@ -23,7 +23,7 @@ BASE_RESUME = Path(r"D:\Resume's and coverletter\University of Utah Health Resea
 OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", r"D:\Resume's and coverletter"))
 DEFAULT_JD_FILE = Path("job_description.txt")
 DEFAULT_MODEL = "gpt-4o-mini"
-MIN_GENERATED_WORDS = 575
+MIN_GENERATED_WORDS = 520
 FORBIDDEN_POSITIONING_WORDS = ["equivalent", "adjacent", "similar"]
 FORMAT_REFERENCE = Path(__file__).parent / "format_reference_b.docx"
 ANTI_AI_PATTERNS = [
@@ -32,6 +32,9 @@ ANTI_AI_PATTERNS = [
     "hiring-manager keyword proof",
     "interview-ready",
     "business-ready",
+    "fast JD alignment",
+    "semantic saturation",
+    "keyword inventory",
 ]
 
 PLACEHOLDERS = {
@@ -163,102 +166,29 @@ def trim_to_max_words(text: str, max_words: int) -> str:
 
 
 def repair_generated_resume(data: dict, jd_text: str) -> dict:
-    """Deterministically densify common thin outputs before failing quality control."""
+    """Lightly repair shape issues without fabricating tools, domains, or metrics."""
     data.setdefault("summary", "")
     data.setdefault("destination_cleveland_bullets", [])
     data.setdefault("genpact_bullets", [])
     data.setdefault("projects", [])
     data.setdefault("core_competencies", [])
 
-    if word_count(data.get("summary", "")) < 60:
-        data["summary"] = (
-            "Data Scientist with an M.S. in Computer Science and 4+ years of experience in "
-            "**Python**, **SQL**, **machine learning**, and **data visualization**. Skilled in translating "
-            "complex datasets into practical insights through **data cleaning**, modeling, dashboards, "
-            "and stakeholder reporting. Differentiates through reproducible workflows, fast JD alignment, "
-            "practical analytics delivery, and clear communication across research, operations, consulting, "
-            "and client-facing environments with measurable business impact."
-        )
-    else:
+    if word_count(data.get("summary", "")) > 90:
         data["summary"] = trim_to_max_words(data.get("summary", ""), 82)
-
-    experience_fillers = [
-        "**Python**, **SQL**, quality checks, and stakeholder-ready reporting",
-        "**machine learning**, exploratory analysis, and measurable business insight delivery",
-        "**Power BI**, dashboard validation, and cross-functional communication",
-        "**data cleaning**, documentation, and reproducible workflow standards",
-        "**analytics**, trend identification, and decision-support reporting",
-    ]
 
     for key in ["destination_cleveland_bullets", "genpact_bullets"]:
         bullets = data.get(key, [])
-        for index, bullet in enumerate(bullets):
-            filler = experience_fillers[index % len(experience_fillers)]
-            bullets[index] = trim_to_max_words(expand_sentence(bullet, 18, filler), 25)
-        data[key] = bullets
-
-    generic_project_fillers = [
-        "**feature engineering**, model validation, performance tracking, reporting review, reproducible documentation, and practical business interpretation",
-        "**data cleaning**, exploratory analysis, visualization, output review, business interpretation, and documented technical assumptions",
-        "**Python**, **SQL**, dashboard validation, quality checks, data lineage, model evaluation, and project evidence",
-    ]
+        data[key] = [trim_to_max_words(str(bullet), 32) for bullet in bullets[:5]]
 
     for project_index, project in enumerate(data.get("projects", [])):
         if not isinstance(project, dict):
             continue
-        bullets = project.get("bullets", [])
-        for bullet_index, bullet in enumerate(bullets):
-            filler = generic_project_fillers[(project_index + bullet_index) % len(generic_project_fillers)]
-            bullets[bullet_index] = trim_to_max_words(expand_sentence(bullet, 24, filler), 30)
-            if word_count(bullets[bullet_index]) < 20:
-                bullets[bullet_index] = trim_to_max_words(
-                    bullets[bullet_index].rstrip(".")
-                    + " with measurable business context and clear technical evidence.",
-                    30,
-                )
-        project["bullets"] = bullets
+        project["bullets"] = [trim_to_max_words(str(bullet), 36) for bullet in project.get("bullets", [])[:3]]
 
     if len(data.get("core_competencies", [])) < 6:
         data.setdefault("core_competencies", []).append(
-            "Professional Attributes: **problem-solving**, **continuous learning**, **collaboration**, **communication**, **documentation**, **stakeholder engagement**"
+            "Professional Strengths: problem-solving, collaboration, communication, documentation, continuous learning"
         )
-
-    density_terms = [
-        "**risk reduction**",
-        "**quality control**",
-        "**business impact**",
-        "**technical documentation**",
-        "**reproducible workflows**",
-        "**stakeholder communication**",
-    ]
-    density_index = 0
-
-    while generated_word_count(data) < MIN_GENERATED_WORDS and density_index < 60:
-        projects = data.get("projects", [])
-        expanded = False
-        for project in projects:
-            if not isinstance(project, dict):
-                continue
-            bullets = project.setdefault("bullets", [])
-            if len(bullets) < 3:
-                bullets.append(
-                    "Documented **methods**, assumptions, validation results, and business implications to support technical and non-technical review."
-                )
-                expanded = True
-                break
-        if expanded:
-            continue
-
-        competencies = data.setdefault("core_competencies", [])
-        if len(competencies) < 6:
-            competencies.append(
-                "Role Alignment: **data science**, **machine learning**, **Python**, **SQL**, **analytics**, **reporting**, **business outcomes**"
-            )
-            continue
-
-        target = density_index % len(competencies)
-        competencies[target] = competencies[target].rstrip(".") + ", " + density_terms[density_index % len(density_terms)]
-        density_index += 1
 
     for word in FORBIDDEN_POSITIONING_WORDS:
         pattern = re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
@@ -300,12 +230,16 @@ def validate_generated_resume(data: dict) -> list[str]:
     word_count = generated_word_count(data)
     if word_count < MIN_GENERATED_WORDS:
         issues.append(
-            f"Generated content is too short at {word_count} words. Minimum is {MIN_GENERATED_WORDS} words so the resume fills at least one complete page."
+            f"Generated content is thin at {word_count} words. Add truthful, interview-defensible detail from the provided profile."
         )
 
     summary_words = len(re.findall(r"\b[\w+#./-]+\b", str(data.get("summary", ""))))
-    if summary_words < 60 or summary_words > 85:
-        issues.append(f"Summary must be 60-80 words; current summary is {summary_words} words.")
+    if summary_words < 45 or summary_words > 90:
+        issues.append(f"Summary should be 45-90 words and identity-driven; current summary is {summary_words} words.")
+
+    summary_lower = str(data.get("summary", "")).lower()
+    if summary_lower.startswith("data scientist with"):
+        issues.append("Summary uses the banned generic opening 'Data Scientist with'. Make it identity-driven and role-native.")
 
     for key in ["destination_cleveland_bullets", "genpact_bullets"]:
         bullets = data.get(key, [])
@@ -313,8 +247,8 @@ def validate_generated_resume(data: dict) -> list[str]:
             issues.append(f"{key} must contain exactly 5 bullets.")
         for index, bullet in enumerate(bullets, start=1):
             count = len(re.findall(r"\b[\w+#./-]+\b", str(bullet)))
-            if count < 15 or count > 28:
-                issues.append(f"{key} bullet {index} must be 15-25 words; current count is {count}.")
+            if count < 12 or count > 34:
+                issues.append(f"{key} bullet {index} should be concise but natural; current count is {count}.")
 
     projects = data.get("projects", [])
     if len(projects) != 3:
@@ -328,8 +262,8 @@ def validate_generated_resume(data: dict) -> list[str]:
             issues.append(f"Project {index} must contain 2-3 bullets.")
         for bullet_index, bullet in enumerate(bullets, start=1):
             count = len(re.findall(r"\b[\w+#./-]+\b", str(bullet)))
-            if count < 20 or count > 34:
-                issues.append(f"Project {index} bullet {bullet_index} must be 20-30 words; current count is {count}.")
+            if count < 14 or count > 40:
+                issues.append(f"Project {index} detail {bullet_index} should be readable and defensible; current count is {count}.")
 
     competencies = data.get("core_competencies", [])
     if len(competencies) < 5 or len(competencies) > 6:
@@ -354,6 +288,88 @@ def validate_generated_resume(data: dict) -> list[str]:
             issues.append(f"Too many bullets start with '{first}'. Vary cadence.")
 
     return issues
+
+
+def validate_authenticity(data: dict, base_resume_text: str) -> list[str]:
+    issues = []
+    generated = flatten_generated_text(data).lower()
+    source = base_resume_text.lower()
+    risky_terms = [
+        "sagemaker",
+        "redshift",
+        "glue",
+        "lambda",
+        "ec2",
+        "s3",
+        "databricks",
+        "snowflake",
+        "azure",
+        "gcp",
+        "qualtrics",
+        "salesforce",
+        "hubspot",
+        "compusense",
+        "asreml",
+    ]
+    for term in risky_terms:
+        if re.search(rf"\b{re.escape(term)}\b", generated) and not re.search(rf"\b{re.escape(term)}\b", source):
+            issues.append(f"Remove or soften unsupported tool/platform claim: {term}.")
+    return issues
+
+
+def strip_unsupported_terms(data: dict, base_resume_text: str) -> dict:
+    source = base_resume_text.lower()
+    risky_terms = [
+        "sagemaker",
+        "redshift",
+        "glue",
+        "lambda",
+        "ec2",
+        "s3",
+        "databricks",
+        "snowflake",
+        "azure",
+        "gcp",
+        "qualtrics",
+        "salesforce",
+        "hubspot",
+        "compusense",
+        "asreml",
+    ]
+    unsupported = [
+        term for term in risky_terms
+        if not re.search(rf"\b{re.escape(term)}\b", source)
+    ]
+    if not unsupported:
+        return data
+
+    def clean_text(value: str) -> str:
+        text = str(value)
+        for term in unsupported:
+            text = re.sub(rf"\b{re.escape(term)}\b", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s+,", ",", text)
+        text = re.sub(r",\s*,", ",", text)
+        text = re.sub(r"\bon\s+and\b", "on analytics workflows", text, flags=re.IGNORECASE)
+        text = re.sub(r"\busing\s+and\b", "using documented workflows", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bused\s+and\s+for\b", "Used documented workflows for", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bused\s+for\b", "Used documented workflows for", text, flags=re.IGNORECASE)
+        text = re.sub(r"\(\s*,\s*", "(", text)
+        text = re.sub(r",\s*\)", ")", text)
+        text = re.sub(r"\(\s*\)", "", text)
+        return re.sub(r"\s{2,}", " ", text).strip(" ,")
+
+    for key in ["summary", "destination_cleveland_bullets", "genpact_bullets", "core_competencies"]:
+        if isinstance(data.get(key), str):
+            data[key] = clean_text(data[key])
+        elif isinstance(data.get(key), list):
+            data[key] = [clean_text(item) for item in data[key]]
+
+    for project in data.get("projects", []):
+        if isinstance(project, dict):
+            project["title"] = clean_text(project.get("title", ""))
+            project["bullets"] = [clean_text(item) for item in project.get("bullets", [])]
+
+    return data
 
 
 def make_template_from_resume(source_path: Path, template_path: Path) -> Path:
@@ -1109,6 +1125,152 @@ JOB DESCRIPTION:
 """.strip()
 
 
+def build_prompt(base_resume_text: str, jd_text: str) -> str:
+    return f"""
+You are an elite resume strategist, recruiter-skeptic, and hiring committee analyst.
+
+Use Universal Resume Intelligence Framework v3: Recruiter-Trust Resume Architecture.
+
+Primary objective:
+Generate a resume recruiters believe. Never optimize for exact keyword coverage at the cost of credibility.
+
+Core principle:
+A resume gets interviews when it feels like a real person already operating successfully inside that professional world, not when it reads like a keyword inventory.
+
+PHASE 1 - JD Intelligence Engine:
+Deconstruct the JD for organizational intent:
+- Core functional work: what the company is actually paying for.
+- Systems and infrastructure signals: scalability, standardization, governance, automation, reproducibility.
+- Risk signals: unreliable data, communication failure, operational chaos, compliance risk, overloaded teams.
+- Cultural and organizational signals: startup, enterprise, consulting, government, academic, healthcare, consumer insights, product analytics, ML infrastructure.
+- Seniority and authority: entry-level, mid-level, specialist, lead, architect, researcher.
+
+PHASE 2 - Experience Truth Graph:
+Use only real evidence from the BASE RESUME/profile.
+Allowed: strategic reinterpretation, prioritization, role-native framing, clearer language.
+Forbidden: professional impersonation, invented industries, invented scientific domains, invented operational ecosystems, invented production infrastructure, invented platform ownership, or unsupported methodologies.
+
+HARD RULE:
+Never fabricate cloud services, platforms, tools, methods, domains, or measurable outcomes.
+If the JD mentions AWS, Azure, GCP, Databricks, Snowflake, SageMaker, Redshift, Glue, Lambda, S3, or similar infrastructure, include those only if explicitly supported by the BASE RESUME/profile. If evidence is weak, emphasize transferable workflows without claiming ownership.
+
+Tool proximity:
+- Generic transferable tools are safe only when present in the profile: Python, SQL, Excel, Tableau, Power BI.
+- Domain platforms require plausibility and profile evidence: Databricks, Snowflake, Salesforce, Qualtrics, HubSpot.
+- Specialized infrastructure requires explicit evidence: clinical systems, sensory labs, ASReml, CompuSense, semiconductor tooling, model-serving stacks.
+
+PHASE 3 - Professional Identity Engine:
+Choose ONE dominant identity:
+Applied ML Builder, Insight Translator, Systems Optimizer, Research Operations Analyst, Product Analytics Scientist, Consumer Insights Researcher, Data Infrastructure Builder, Growth & Experimentation Analyst.
+Everything in the resume must reinforce that one identity.
+
+Summary rules:
+- Establish identity, direction, specialization, and professional worldview.
+- Use role-native language and realistic confidence.
+- Do not dump a skill list.
+- Do not start with the generic pattern "Data Scientist with...".
+
+PHASE 4 - Organizational Realism:
+Before adding any tool, workflow, or methodology, ask:
+- Could this organization realistically use this?
+- Does this environment support this workflow?
+- Is this believable at the candidate's seniority level?
+If no, rewrite toward transferable work rather than direct ownership.
+
+PHASE 5 - Human-Centered Bullet Generation:
+Use this bullet formula:
+Business Context + Action + Method/System + Outcome + Strategic or Operational Value.
+
+Each experience section must include a mix of operational realism, technical competence, stakeholder communication, strategic/business thinking, and process/system reliability.
+Metrics are optional. Believable operational contribution is stronger than fake percentages.
+
+Forbidden writing patterns:
+- repetitive semantic tails
+- "stakeholder-ready reporting"
+- repeated "documentation and validation" endings
+- keyword stuffing
+- excessive optimization language
+- every bullet sounding heroic
+- identical bullet cadence or identical length
+
+PHASE 6 - Human Trust Validation:
+Before returning JSON, simulate:
+- Recruiter: Would they believe this person exists?
+- Hiring manager: Does the candidate sound operationally credible?
+- Domain expert: Would someone in this profession describe work this way?
+- Interview survivability: Could the candidate explain each bullet naturally in 15 minutes?
+- Environmental authenticity: Could this workflow exist at this company, industry, seniority, and infrastructure level?
+If any answer is no, rewrite the weak section.
+
+PHASE 7 - ATS Optimization, last:
+Mirror important terminology naturally only after authenticity is satisfied.
+Ensure core JD concepts appear when truthful.
+Prove important skills through work when possible.
+Preserve readability and interview defensibility.
+
+Removed permanently:
+- No 100% keyword coverage requirement.
+- No keyword quotas.
+- No forced cloud-service injection.
+- No excessive bolding.
+- No semantic stuffing.
+
+Automation instruction:
+Rewrite every resume section from Professional Summary through Core Competencies.
+Do not partially edit the resume.
+Use bullet points in Experience.
+Use **bold** only for the most important terms that are truthful and helpful.
+Core Competencies must use paired category format: Category: keyword, keyword, keyword.
+Remove duplicate project text.
+Keep readability high.
+The resume should fill a complete page through truthful specificity, not filler or fabrication.
+
+Strict output requirements:
+- Return valid JSON only.
+- No Markdown fences.
+- No commentary outside JSON.
+- summary must be one paragraph of 45-90 words.
+- summary must be identity-driven, role-native, and credible.
+- destination_cleveland_bullets must contain exactly 5 bullets.
+- genpact_bullets must contain exactly 5 bullets.
+- Experience bullets should vary naturally in length and cadence.
+- Experience bullets must be interview-defensible.
+- projects must contain exactly 3 project objects.
+- Each project object must have a title with tools in parentheses and 2-3 detail strings.
+- The DOCX will render each project as one paragraph, not separate project bullets.
+- Each project paragraph must show tools used, what was built, what it did, and a believable outcome if supported.
+- core_competencies must contain 5-6 paired category bullets.
+- Each core competency category should contain 4-8 truthful terms.
+- Categories should map to JD signals: core functional skills, technical tools, domain methods, communication/stakeholders, data/reporting tools, and professional attributes only if signaled.
+- Do not include bullet symbols in JSON values; the DOCX writer adds bullets.
+- Do not make generic claims like "increased accuracy" unless grounded in the source resume or clearly framed as project output.
+- Never include interview-undefendable claims.
+
+JSON schema:
+{{
+  "summary": "string",
+  "destination_cleveland_bullets": ["bullet", "bullet", "bullet", "bullet", "bullet"],
+  "genpact_bullets": ["bullet", "bullet", "bullet", "bullet", "bullet"],
+  "projects": [
+    {{
+      "title": "Project Name (Python, SQL, Power BI)",
+      "bullets": ["bullet", "bullet"]
+    }}
+  ],
+  "core_competencies": [
+    "Machine Learning & AI: Python, scikit-learn, model evaluation, classification",
+    "Data Analysis & Reporting: SQL, Pandas, dashboards, stakeholder reporting"
+  ]
+}}
+
+BASE RESUME:
+{base_resume_text}
+
+JOB DESCRIPTION:
+{jd_text}
+""".strip()
+
+
 def build_retry_prompt(base_prompt: str, previous_data: dict, issues: list[str]) -> str:
     return f"""
 {base_prompt}
@@ -1121,7 +1283,7 @@ Quality control issues:
 Previous JSON:
 {json.dumps(previous_data, indent=2)}
 
-Rewrite the JSON now. Preserve the exact schema. Fix every issue. The resume must fill at least one complete page.
+Rewrite the JSON now. Preserve the exact schema. Fix every issue through truthful, interview-defensible detail. Do not add unsupported tools, platforms, domains, metrics, or infrastructure.
 """.strip()
 
 
@@ -1140,11 +1302,11 @@ def call_llm(base_resume_text: str, jd_text: str, model: str, api_key: str | Non
             response_format={"type": "json_object"},
         )
         data = extract_json(response.choices[0].message.content)
-        issues = validate_generated_resume(data)
+        issues = validate_generated_resume(data) + validate_authenticity(data, base_resume_text)
         if not issues:
             return data
 
-    return repair_generated_resume(data, jd_text)
+    return strip_unsupported_terms(repair_generated_resume(data, jd_text), base_resume_text)
 
 
 # ---------------- PDF EXPORT ---------------- #
