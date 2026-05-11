@@ -1,7 +1,9 @@
 import json
 import os
+import re
 import shutil
 import uuid
+from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -11,6 +13,7 @@ import cgi
 from generate_resume import (
     BASE_RESUME,
     create_template_from_profile,
+    flatten_generated_text,
     generate_resume_from_jd,
     make_template_from_resume,
 )
@@ -122,6 +125,208 @@ def find_history_item(run_id: str) -> dict | None:
     return None
 
 
+def update_history_item(run_id: str, updater) -> dict | None:
+    data = load_history()
+    for record in data.get("users", {}).values():
+        for index, item in enumerate(record.get("items", [])):
+            if item.get("id") == run_id:
+                updated = updater(item) or item
+                record["items"][index] = updated
+                save_history(data)
+                return updated
+    return None
+
+
+def active_version(item: dict) -> dict:
+    versions = item.get("versions") or []
+    active_id = item.get("active_version_id")
+    for version in versions:
+        if version.get("id") == active_id:
+            return version
+    if versions:
+        return versions[-1]
+    return {
+        "id": "v1",
+        "docx_path": item.get("docx_path"),
+        "pdf_path": item.get("pdf_path"),
+        "structured_resume": item.get("structured_resume", {}),
+        "analysis": item.get("analysis", {}),
+        "keyword_gaps": item.get("keyword_gaps", {}),
+    }
+
+
+def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
+    text = json.dumps(profile or {}, ensure_ascii=False)
+    for item in proof or []:
+        text += " " + " ".join(str(item.get(key, "")) for key in ["keyword", "where", "proof"])
+    return text
+
+
+def important_jd_terms(jd_text: str) -> list[str]:
+    text = jd_text or ""
+    lowered = text.lower()
+    curated = [
+        "Python", "SQL", "Pandas", "NumPy", "scikit-learn", "TensorFlow", "PyTorch",
+        "machine learning", "deep learning", "statistics", "data analysis", "data cleaning",
+        "data visualization", "dashboard", "Tableau", "Power BI", "Matplotlib", "Seaborn",
+        "AWS", "Azure", "GCP", "S3", "EC2", "Lambda", "Glue", "Redshift", "SageMaker",
+        "Databricks", "Snowflake", "ETL", "data pipeline", "model testing", "training",
+        "overfitting", "SQL databases", "communication", "collaboration", "reports",
+        "real datasets", "Kaggle", "GitHub", "cloud platforms", "problem-solving",
+    ]
+    terms = [term for term in curated if re.search(rf"\b{re.escape(term.lower())}\b", lowered)]
+
+    for match in re.finditer(r"\b[A-Z][A-Za-z0-9+#./-]*(?:\s+[A-Z][A-Za-z0-9+#./-]*){0,2}\b", text):
+        value = match.group(0).strip(" .,:;()[]")
+        if 2 <= len(value) <= 36 and value.lower() not in {"we", "the", "job", "about"}:
+            terms.append(value)
+
+    for pattern in [
+        r"\b(?:build|building|testing|training|cleaning|preparing|visualization|dashboards?|reports?|databases?|models?)\b(?:\s+\w+){0,3}",
+        r"\b(?:data|machine learning|cloud|statistical|academic|internship)\s+\w+(?:\s+\w+)?\b",
+    ]:
+        for match in re.finditer(pattern, lowered):
+            phrase = re.sub(r"\s+", " ", match.group(0)).strip()
+            if len(phrase.split()) >= 2:
+                terms.append(phrase)
+
+    seen = set()
+    cleaned = []
+    stop = {"full time", "onsite hybrid", "required skills", "preferred nice", "key responsibilities"}
+    for term in terms:
+        term = re.sub(r"\s+", " ", term).strip(" .,:;()[]")
+        key = term.lower()
+        if key in seen or key in stop or " with" in key or len(key) < 2:
+            continue
+        seen.add(key)
+        cleaned.append(term)
+    return cleaned[:45]
+
+
+def contains_term(text: str, term: str) -> bool:
+    return re.search(rf"\b{re.escape(term.lower())}\b", (text or "").lower()) is not None
+
+
+def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof: list[dict] | None = None) -> dict:
+    terms = important_jd_terms(jd_text)
+    generated_text = flatten_generated_text(generated_data or {})
+    evidence_text = profile_to_text(profile, proof)
+    covered = []
+    supported_missing = []
+    needs_user_proof = []
+    not_recommended = []
+    high_risk = {"sagemaker", "redshift", "glue", "lambda", "ec2", "s3", "databricks", "snowflake", "azure", "gcp"}
+
+    for term in terms:
+        if contains_term(generated_text, term):
+            covered.append(term)
+        elif contains_term(evidence_text, term):
+            supported_missing.append(term)
+        elif term.lower() in high_risk:
+            needs_user_proof.append(term)
+        elif len(term.split()) > 3:
+            not_recommended.append(term)
+        else:
+            needs_user_proof.append(term)
+
+    total = max(1, len(terms))
+    return {
+        "important_terms": terms,
+        "covered": covered,
+        "supported_missing": supported_missing[:18],
+        "needs_user_proof": needs_user_proof[:18],
+        "not_recommended": not_recommended[:12],
+        "coverage_percent": round((len(covered) / total) * 100),
+    }
+
+
+def score_resume(jd_text: str, generated_data: dict, profile: dict, pdf_path: str | None, proof: list[dict] | None = None) -> dict:
+    gaps = build_keyword_gaps(jd_text, generated_data, profile, proof)
+    resume_text = flatten_generated_text(generated_data or {})
+    words = len(re.findall(r"\b[\w+#./-]+\b", resume_text))
+    proof_penalty = min(45, len(gaps["needs_user_proof"]) * 5)
+    supported_penalty = min(20, len(gaps["supported_missing"]) * 3)
+    readability = max(55, min(96, 100 - abs(words - 620) // 10))
+    ats = max(0, min(100, gaps["coverage_percent"] - supported_penalty // 2))
+    proof_strength = max(0, 100 - proof_penalty - supported_penalty)
+    role_fit = max(35, min(98, round((ats * 0.65) + (proof_strength * 0.35))))
+    format_quality = 95 if pdf_path else 78
+    interview_defensibility = max(0, 100 - proof_penalty)
+    overall = round((ats + proof_strength + readability + role_fit + format_quality + interview_defensibility) / 6)
+    scores = {
+        "ats_keyword_alignment": ats,
+        "proof_strength": proof_strength,
+        "recruiter_readability": readability,
+        "role_fit": role_fit,
+        "format_quality": format_quality,
+        "interview_defensibility": interview_defensibility,
+        "overall_score": overall,
+    }
+    explanations = {
+        "ats_keyword_alignment": f"{len(gaps['covered'])} of {len(gaps['important_terms'])} important JD signals are visible in the resume.",
+        "proof_strength": "Unsupported terms are separated for user proof before regeneration.",
+        "recruiter_readability": f"The generated resume has about {words} words across summary, experience, projects, and competencies.",
+        "role_fit": "Role fit blends keyword coverage with evidence strength.",
+        "format_quality": "PDF preview is available." if pdf_path else "DOCX is available; PDF was skipped.",
+        "interview_defensibility": "Claims stay stronger when tools and responsibilities have profile evidence or user proof.",
+    }
+    return {
+        "scores": scores,
+        "explanations": explanations,
+        "strengths": [
+            "Resume was generated from the user's structured base profile.",
+            "JD terms are evaluated against actual resume text and profile evidence.",
+        ],
+        "risks": [
+            "Some JD terms require user proof before safe inclusion."
+        ] if gaps["needs_user_proof"] else [],
+        "missing_keywords": gaps["supported_missing"] + gaps["needs_user_proof"],
+        "unsupported_keywords": gaps["needs_user_proof"],
+        "suggested_fixes": [
+            "Provide proof for unsupported keywords, then regenerate for stronger ATS alignment.",
+            "Use playground chat for targeted tone, focus, or section-level rewrites.",
+        ],
+    }
+
+
+def copy_version_files(result: dict, run_dir: Path, version_id: str) -> dict:
+    version_dir = run_dir / "versions"
+    version_dir.mkdir(parents=True, exist_ok=True)
+    docx_src = Path(result["docx_path"])
+    docx_target = version_dir / f"{version_id}_{docx_src.name}"
+    shutil.copy2(docx_src, docx_target)
+    result["docx_path"] = str(docx_target)
+
+    if result.get("pdf_path"):
+        pdf_src = Path(result["pdf_path"])
+        pdf_target = version_dir / f"{version_id}_{pdf_src.name}"
+        shutil.copy2(pdf_src, pdf_target)
+        result["pdf_path"] = str(pdf_target)
+    return result
+
+
+def merge_profile_with_proof(profile: dict, proof: list[dict]) -> dict:
+    merged = json.loads(json.dumps(profile or {}))
+    if not proof:
+        return merged
+    projects = merged.setdefault("projects", [])
+    proof_lines = []
+    for item in proof:
+        if item.get("used") is False:
+            continue
+        keyword = str(item.get("keyword", "")).strip()
+        detail = str(item.get("proof", "")).strip()
+        where = str(item.get("where", "")).strip()
+        if keyword and detail:
+            proof_lines.append(f"{keyword} ({where}): {detail}" if where else f"{keyword}: {detail}")
+    if proof_lines:
+        projects.append({
+            "title": "User-Verified JD Evidence",
+            "description": " ".join(proof_lines),
+        })
+    return merged
+
+
 def save_uploaded_file(field, destination: Path) -> Path | None:
     if field is None or not getattr(field, "filename", ""):
         return None
@@ -143,6 +348,14 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
 
         if parsed.path.startswith("/api/download/"):
             self.serve_download(parsed.path)
+            return
+
+        if parsed.path.startswith("/api/preview/"):
+            self.serve_preview(parsed.path)
+            return
+
+        if parsed.path.startswith("/api/resume/"):
+            self.serve_resume(parsed.path)
             return
 
         if parsed.path == "/api/history":
@@ -192,6 +405,9 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 profile = save_profile(email, body.get("profile", {}))
                 json_response(self, HTTPStatus.OK, {"profile": profile})
                 return
+            if parsed.path.startswith("/api/resume/"):
+                self.handle_resume_action(parsed.path)
+                return
             self.send_error(HTTPStatus.NOT_FOUND)
         except Exception as exc:
             json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
@@ -228,6 +444,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
 
         base_resume_path = BASE_RESUME
         profile_json = form.getfirst("profile_json") or ""
+        profile_data = {}
         if profile_json.strip():
             profile_data = json.loads(profile_json)
             base_resume_path = create_template_from_profile(profile_data, run_dir / "profile_template.docx")
@@ -250,6 +467,26 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             skip_pdf=skip_pdf,
             api_key=api_key,
         )
+        result = copy_version_files(result, run_dir, "v1")
+        profile_for_analysis = profile_data if profile_json.strip() else {}
+        keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile_for_analysis)
+        analysis = score_resume(
+            jd_text,
+            result["structured_resume"],
+            profile_for_analysis,
+            result["pdf_path"],
+        )
+        version = {
+            "id": "v1",
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "label": "Original generation",
+            "instruction": "",
+            "docx_path": result["docx_path"],
+            "pdf_path": result["pdf_path"],
+            "structured_resume": result["structured_resume"],
+            "analysis": analysis,
+            "keyword_gaps": keyword_gaps,
+        }
 
         RESULTS[run_id] = result
         history_item = {
@@ -260,8 +497,18 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "created_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
             "docx_url": f"/api/download/{run_id}/docx",
             "pdf_url": f"/api/download/{run_id}/pdf" if result["pdf_path"] else None,
+            "preview_url": f"/api/preview/{run_id}/pdf" if result["pdf_path"] else None,
             "docx_path": result["docx_path"],
             "pdf_path": result["pdf_path"],
+            "structured_resume": result["structured_resume"],
+            "profile": profile_for_analysis,
+            "skip_pdf": skip_pdf,
+            "versions": [version],
+            "active_version_id": "v1",
+            "analysis": analysis,
+            "keyword_gaps": keyword_gaps,
+            "user_proof": [],
+            "playground_notes": [],
         }
         add_history_item(user_email, history_item)
         response = {
@@ -270,10 +517,172 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "role": result["role"],
             "docx_url": f"/api/download/{run_id}/docx",
             "pdf_url": f"/api/download/{run_id}/pdf" if result["pdf_path"] else None,
+            "preview_url": f"/api/preview/{run_id}/pdf" if result["pdf_path"] else None,
             "history_item": history_item,
             "structured_resume": result["structured_resume"],
+            "analysis": analysis,
+            "keyword_gaps": keyword_gaps,
         }
         return response
+
+    def serve_resume(self, path: str) -> None:
+        parts = path.strip("/").split("/")
+        if len(parts) != 3:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        _, _, run_id = parts
+        item = find_history_item(run_id)
+        if not item:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        version = active_version(item)
+        payload = dict(item)
+        payload["active_version"] = version
+        payload["docx_url"] = f"/api/download/{run_id}/docx"
+        payload["pdf_url"] = f"/api/download/{run_id}/pdf" if version.get("pdf_path") else None
+        payload["preview_url"] = f"/api/preview/{run_id}/pdf" if version.get("pdf_path") else None
+        json_response(self, HTTPStatus.OK, payload)
+
+    def handle_resume_action(self, path: str) -> None:
+        parts = path.strip("/").split("/")
+        if len(parts) != 4:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        _, _, run_id, action = parts
+        body = read_json_body(self)
+        if action == "proof":
+            item = update_history_item(run_id, lambda current: self.save_resume_proof(current, body))
+            if not item:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            json_response(self, HTTPStatus.OK, item)
+            return
+        if action == "score":
+            item = update_history_item(run_id, self.rescore_resume_item)
+            if not item:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            json_response(self, HTTPStatus.OK, item)
+            return
+        if action == "activate":
+            item = update_history_item(run_id, lambda current: self.activate_resume_version(current, body))
+            if not item:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            json_response(self, HTTPStatus.OK, item)
+            return
+        if action == "regenerate":
+            item = self.regenerate_resume_item(run_id, body)
+            if not item:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            json_response(self, HTTPStatus.OK, item)
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def save_resume_proof(self, item: dict, body: dict) -> dict:
+        proof = body.get("proof", [])
+        if not isinstance(proof, list):
+            proof = []
+        item["user_proof"] = proof
+        version = active_version(item)
+        gaps = build_keyword_gaps(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), proof)
+        analysis = score_resume(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), version.get("pdf_path"), proof)
+        item["keyword_gaps"] = gaps
+        item["analysis"] = analysis
+        version["keyword_gaps"] = gaps
+        version["analysis"] = analysis
+        return item
+
+    def activate_resume_version(self, item: dict, body: dict) -> dict:
+        version_id = str(body.get("version_id", "")).strip()
+        versions = item.get("versions", [])
+        version = next((candidate for candidate in versions if candidate.get("id") == version_id), None)
+        if not version:
+            return item
+        item["active_version_id"] = version_id
+        item["docx_path"] = version.get("docx_path")
+        item["pdf_path"] = version.get("pdf_path")
+        item["structured_resume"] = version.get("structured_resume", {})
+        item["analysis"] = version.get("analysis", {})
+        item["keyword_gaps"] = version.get("keyword_gaps", {})
+        return item
+
+    def rescore_resume_item(self, item: dict) -> dict:
+        version = active_version(item)
+        proof = item.get("user_proof", [])
+        gaps = build_keyword_gaps(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), proof)
+        analysis = score_resume(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), version.get("pdf_path"), proof)
+        item["keyword_gaps"] = gaps
+        item["analysis"] = analysis
+        version["keyword_gaps"] = gaps
+        version["analysis"] = analysis
+        return item
+
+    def regenerate_resume_item(self, run_id: str, body: dict) -> dict | None:
+        item = find_history_item(run_id)
+        if not item:
+            return None
+        proof = body.get("proof")
+        if isinstance(proof, list):
+            item["user_proof"] = proof
+        instruction = str(body.get("instruction", "")).strip()
+        current_versions = item.setdefault("versions", [])
+        version_id = f"v{len(current_versions) + 1}"
+        run_dir = RUN_DIR / run_id
+        proof_text = "\n".join(
+            f"- {entry.get('keyword', '')}: {entry.get('proof', '')}"
+            for entry in item.get("user_proof", [])
+            if entry.get("used") is not False and entry.get("proof")
+        )
+        augmented_jd = item.get("jd", "")
+        if proof_text:
+            augmented_jd += "\n\nUSER-VERIFIED PROOF TO USE ONLY WHERE CREDIBLE:\n" + proof_text
+        if instruction:
+            augmented_jd += "\n\nPLAYGROUND REGENERATION REQUEST:\n" + instruction
+
+        profile = merge_profile_with_proof(item.get("profile", {}), item.get("user_proof", []))
+        template_path = create_template_from_profile(profile, run_dir / f"{version_id}_template.docx")
+        details = profile.get("details", {})
+        result = generate_resume_from_jd(
+            augmented_jd,
+            base_resume_path=template_path,
+            output_root=OUTPUT_ROOT,
+            details=details,
+            skip_pdf=item.get("skip_pdf", False),
+        )
+        result = copy_version_files(result, run_dir, version_id)
+        gaps = build_keyword_gaps(item.get("jd", ""), result["structured_resume"], profile, item.get("user_proof", []))
+        analysis = score_resume(item.get("jd", ""), result["structured_resume"], profile, result.get("pdf_path"), item.get("user_proof", []))
+        version = {
+            "id": version_id,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "label": f"Regeneration {len(current_versions) + 1}",
+            "instruction": instruction,
+            "docx_path": result["docx_path"],
+            "pdf_path": result["pdf_path"],
+            "structured_resume": result["structured_resume"],
+            "analysis": analysis,
+            "keyword_gaps": gaps,
+        }
+
+        def apply_update(current: dict) -> dict:
+            current.setdefault("versions", []).append(version)
+            current["active_version_id"] = version_id
+            current["docx_path"] = result["docx_path"]
+            current["pdf_path"] = result["pdf_path"]
+            current["structured_resume"] = result["structured_resume"]
+            current["analysis"] = analysis
+            current["keyword_gaps"] = gaps
+            current["user_proof"] = item.get("user_proof", [])
+            current.setdefault("playground_notes", []).append({
+                "created_at": version["created_at"],
+                "message": instruction or "Regenerated with saved proof.",
+            })
+            return current
+
+        RESULTS[run_id] = result
+        return update_history_item(run_id, apply_update)
 
     def serve_download(self, path: str) -> None:
         parts = path.strip("/").split("/")
@@ -283,11 +692,12 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
 
         _, _, run_id, kind = parts
         result = RESULTS.get(run_id)
-        history_item = find_history_item(run_id) if not result else None
+        history_item = find_history_item(run_id)
+        version = active_version(history_item or {}) if history_item else {}
         target = (
             result.get("docx_path") if kind == "docx" else result.get("pdf_path")
-        ) if result else (
-            history_item.get("docx_path") if kind == "docx" else history_item.get("pdf_path")
+        ) if result and not history_item else (
+            version.get("docx_path") if kind == "docx" else version.get("pdf_path")
         )
         if not target:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -302,6 +712,30 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", MIME_TYPES.get(file_path.suffix, "application/octet-stream"))
         self.send_header("Content-Disposition", f'attachment; filename="{file_path.name}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def serve_preview(self, path: str) -> None:
+        parts = path.strip("/").split("/")
+        if len(parts) != 4 or parts[-1] != "pdf":
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        _, _, run_id, _ = parts
+        item = find_history_item(run_id)
+        version = active_version(item or {}) if item else {}
+        target = version.get("pdf_path")
+        if not target:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        file_path = Path(target)
+        if not file_path.exists():
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        body = file_path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", f'inline; filename="{file_path.name}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

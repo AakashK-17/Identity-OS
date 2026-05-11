@@ -27,6 +27,19 @@ const logoutButton = document.querySelector("#logout-button");
 const historyList = document.querySelector("#history-list");
 const historyCount = document.querySelector("#history-count");
 const historySearch = document.querySelector("#history-search");
+const overallScore = document.querySelector("#overall-score");
+const scoreList = document.querySelector("#score-list");
+const keywordGaps = document.querySelector("#keyword-gaps");
+const playgroundMeta = document.querySelector("#playground-meta");
+const versionSelect = document.querySelector("#version-select");
+const previewEmpty = document.querySelector("#preview-empty");
+const resumePreview = document.querySelector("#resume-preview");
+const activeRunLabel = document.querySelector("#active-run-label");
+const proofList = document.querySelector("#proof-list");
+const saveProofButton = document.querySelector("#save-proof");
+const playgroundMessage = document.querySelector("#playground-message");
+const regenerateButton = document.querySelector("#regenerate-resume");
+const playgroundNotes = document.querySelector("#playground-notes");
 const profileJsonInput = document.querySelector("#profile-json");
 const experienceList = document.querySelector("#experience-list");
 const projectList = document.querySelector("#project-list");
@@ -54,6 +67,7 @@ const state = {
   profile: null,
   identityScenesStarted: false,
   identityScenes: [],
+  activeResume: null,
 };
 
 function initAmbientField() {
@@ -465,21 +479,240 @@ function renderHistory() {
     const article = document.createElement("article");
     article.className = "history-item";
     const jdPreview = (item.jd || "").replace(/\s+/g, " ").slice(0, 220);
+    const score = item.analysis?.scores?.overall_score ?? item.versions?.[0]?.analysis?.scores?.overall_score ?? "--";
     article.innerHTML = `
       <header>
         <div>
           <h3>${escapeHtml(item.company)} · ${escapeHtml(item.role)}</h3>
           <p>${escapeHtml(jdPreview)}${jdPreview.length >= 220 ? "..." : ""}</p>
         </div>
-        <time>${formatDate(item.created_at)}</time>
+        <time>${formatDate(item.created_at)}<strong>${score}</strong></time>
       </header>
       <div class="history-links">
+        <button class="open-playground" type="button" data-run-id="${escapeHtml(item.id)}">Open Playground</button>
         <a href="${item.docx_url}">DOCX</a>
         ${item.pdf_url ? `<a href="${item.pdf_url}">PDF</a>` : ""}
       </div>
     `;
     historyList.appendChild(article);
   }
+}
+
+async function openPlayground(runId) {
+  if (!runId) return;
+  setInlineStatus("busy", "Opening the resume playground.");
+  const response = await fetch(`/api/resume/${encodeURIComponent(runId)}`);
+  const item = await response.json();
+  if (!response.ok) throw new Error(item.error || "Could not open playground.");
+  renderPlayground(item);
+  setInlineStatus("success", "Resume playground is ready.");
+  document.querySelector("#history")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function activeVersion(item) {
+  const versions = item.versions || [];
+  return versions.find((version) => version.id === item.active_version_id) || versions[versions.length - 1] || {};
+}
+
+function renderPlayground(item) {
+  state.activeResume = item;
+  const version = item.active_version || activeVersion(item);
+  setStatus(item.company || "Resume", `${item.role || "Role"} playground opened.`);
+  if (playgroundMeta) playgroundMeta.textContent = `${item.company || "Company"} - ${item.role || "Role"} - ${formatDate(item.created_at)}`;
+  if (activeRunLabel) activeRunLabel.textContent = item.id ? `Run ${item.id.slice(0, 8)}` : "Active";
+  renderDownloads(item);
+  renderPreview(item);
+  renderVersions(item);
+  renderScores(version.analysis || item.analysis || {});
+  renderKeywordGaps(version.keyword_gaps || item.keyword_gaps || {});
+  renderProofQuestions(item, version.keyword_gaps || item.keyword_gaps || {});
+  renderPlaygroundNotes(item);
+}
+
+function renderDownloads(item) {
+  if (!downloads) return;
+  downloads.innerHTML = "";
+  const docx = document.createElement("a");
+  docx.href = item.docx_url || `/api/download/${item.id}/docx`;
+  docx.textContent = "Download DOCX";
+  downloads.appendChild(docx);
+  if (item.pdf_url || item.preview_url) {
+    const pdf = document.createElement("a");
+    pdf.href = item.pdf_url || `/api/download/${item.id}/pdf`;
+    pdf.textContent = "Download PDF";
+    downloads.appendChild(pdf);
+  }
+}
+
+function renderPreview(item) {
+  const url = item.preview_url || (item.pdf_url ? `/api/preview/${item.id}/pdf` : "");
+  if (!resumePreview || !previewEmpty) return;
+  if (url) {
+    resumePreview.src = `${url}?t=${Date.now()}`;
+    resumePreview.classList.remove("hidden");
+    previewEmpty.classList.add("hidden");
+  } else {
+    resumePreview.removeAttribute("src");
+    resumePreview.classList.add("hidden");
+    previewEmpty.classList.remove("hidden");
+  }
+}
+
+function renderVersions(item) {
+  if (!versionSelect) return;
+  versionSelect.innerHTML = "";
+  for (const version of item.versions || []) {
+    const option = document.createElement("option");
+    option.value = version.id;
+    option.textContent = `${version.id.toUpperCase()} - ${version.label || "Version"} - ${formatDate(version.created_at)}`;
+    option.selected = version.id === item.active_version_id;
+    versionSelect.appendChild(option);
+  }
+}
+
+function renderScores(analysis) {
+  const scores = analysis.scores || {};
+  if (overallScore) overallScore.textContent = scores.overall_score ?? "--";
+  if (!scoreList) return;
+  const labels = {
+    ats_keyword_alignment: "ATS alignment",
+    proof_strength: "Proof strength",
+    recruiter_readability: "Readability",
+    role_fit: "Role fit",
+    format_quality: "Format",
+    interview_defensibility: "Interview defense",
+  };
+  scoreList.innerHTML = "";
+  for (const [key, label] of Object.entries(labels)) {
+    const value = scores[key] ?? 0;
+    const row = document.createElement("div");
+    row.className = "score-row";
+    row.innerHTML = `
+      <div><strong>${label}</strong><span>${escapeHtml(analysis.explanations?.[key] || "")}</span></div>
+      <em>${value}</em>
+      <i style="--score:${Math.max(0, Math.min(100, value))}%"></i>
+    `;
+    scoreList.appendChild(row);
+  }
+}
+
+function renderKeywordGaps(gaps) {
+  if (!keywordGaps) return;
+  const safe = gaps.supported_missing || [];
+  const proof = gaps.needs_user_proof || [];
+  const covered = gaps.covered || [];
+  keywordGaps.innerHTML = `
+    <strong>Keyword coverage: ${gaps.coverage_percent ?? "--"}%</strong>
+    <p>${covered.length} covered - ${safe.length} safe to add - ${proof.length} need proof</p>
+    <div class="gap-tags">${safe.slice(0, 10).map((term) => `<span class="safe">${escapeHtml(term)}</span>`).join("")}</div>
+    <div class="gap-tags">${proof.slice(0, 10).map((term) => `<span class="proof">${escapeHtml(term)}</span>`).join("")}</div>
+  `;
+}
+
+function renderProofQuestions(item, gaps) {
+  if (!proofList) return;
+  const existing = item.user_proof || [];
+  const existingMap = new Map(existing.map((proof) => [String(proof.keyword || "").toLowerCase(), proof]));
+  const terms = gaps.needs_user_proof || [];
+  if (!terms.length) {
+    proofList.innerHTML = `<div class="proof-empty">No unsupported critical keywords. You can regenerate with chat instructions anytime.</div>`;
+    return;
+  }
+  proofList.innerHTML = terms.map((term) => {
+    const saved = existingMap.get(String(term).toLowerCase()) || {};
+    return `
+      <article class="proof-card" data-keyword="${escapeHtml(term)}">
+        <strong>${escapeHtml(term)}</strong>
+        <label><input type="checkbox" data-field="used" ${saved.used === false ? "" : "checked"} /> I have used this</label>
+        <select data-field="where">
+          ${["Experience", "Project", "Skills", "Education", "Certification", "Other"].map((value) => `<option ${saved.where === value ? "selected" : ""}>${value}</option>`).join("")}
+        </select>
+        <textarea data-field="proof" placeholder="Where did you use it? Add 1-2 sentences of proof.">${escapeHtml(saved.proof || "")}</textarea>
+      </article>
+    `;
+  }).join("");
+}
+
+function collectProof() {
+  if (!proofList) return [];
+  return [...proofList.querySelectorAll(".proof-card")].map((card) => ({
+    keyword: card.dataset.keyword || "",
+    used: card.querySelector('[data-field="used"]')?.checked || false,
+    where: card.querySelector('[data-field="where"]')?.value || "",
+    proof: card.querySelector('[data-field="proof"]')?.value.trim() || "",
+  }));
+}
+
+function renderPlaygroundNotes(item) {
+  if (!playgroundNotes) return;
+  const notes = item.playground_notes || [];
+  const versions = item.versions || [];
+  playgroundNotes.innerHTML = `
+    <strong>Version history</strong>
+    ${versions.map((version) => `<p><b>${escapeHtml(version.id.toUpperCase())}</b> ${escapeHtml(version.instruction || version.label || "Generated resume")}</p>`).join("")}
+    ${notes.map((note) => `<p>${escapeHtml(formatDate(note.created_at))}: ${escapeHtml(note.message)}</p>`).join("")}
+  `;
+}
+
+async function saveProof() {
+  if (!state.activeResume?.id) {
+    setInlineStatus("error", "Open a resume playground first.");
+    return;
+  }
+  const proof = collectProof();
+  const response = await fetch(`/api/resume/${state.activeResume.id}/proof`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ proof }),
+  });
+  const item = await response.json();
+  if (!response.ok) throw new Error(item.error || "Could not save proof.");
+  renderPlayground({ ...item, active_version: activeVersion(item) });
+  setInlineStatus("success", "Proof saved. You can regenerate with stronger ATS coverage.");
+}
+
+async function regenerateActiveResume() {
+  if (!state.activeResume?.id) {
+    setInlineStatus("error", "Open a resume playground first.");
+    return;
+  }
+  const proof = collectProof();
+  const instruction = playgroundMessage?.value.trim() || "";
+  const missingProof = proof.some((item) => item.used && !item.proof);
+  if (missingProof) {
+    setInlineStatus("error", "Add proof text for checked keywords before regenerating.");
+    return;
+  }
+  regenerateButton.disabled = true;
+  setInlineStatus("busy", "Creating a new resume version from proof and chat instructions.");
+  try {
+    const response = await fetch(`/api/resume/${state.activeResume.id}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ proof, instruction }),
+    });
+    const item = await response.json();
+    if (!response.ok) throw new Error(item.error || "Regeneration failed.");
+    await loadHistory();
+    renderPlayground({ ...item, active_version: activeVersion(item) });
+    if (playgroundMessage) playgroundMessage.value = "";
+    setInlineStatus("success", "New resume version generated.");
+  } finally {
+    regenerateButton.disabled = false;
+  }
+}
+
+async function activateVersion(versionId) {
+  if (!state.activeResume?.id || !versionId) return;
+  const response = await fetch(`/api/resume/${state.activeResume.id}/activate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version_id: versionId }),
+  });
+  const item = await response.json();
+  if (!response.ok) throw new Error(item.error || "Could not switch version.");
+  renderPlayground({ ...item, active_version: activeVersion(item) });
+  await loadHistory();
 }
 
 function formatDate(value) {
@@ -661,6 +894,23 @@ signinLater?.addEventListener("click", closeSignin);
 signinContinue?.addEventListener("click", renderGoogleButton);
 logoutButton?.addEventListener("click", logout);
 historySearch?.addEventListener("input", renderHistory);
+versionSelect?.addEventListener("change", () => {
+  activateVersion(versionSelect.value).catch((error) => setInlineStatus("error", error.message));
+});
+saveProofButton?.addEventListener("click", async () => {
+  try {
+    await saveProof();
+  } catch (error) {
+    setInlineStatus("error", error.message);
+  }
+});
+regenerateButton?.addEventListener("click", async () => {
+  try {
+    await regenerateActiveResume();
+  } catch (error) {
+    setInlineStatus("error", error.message);
+  }
+});
 addExperienceButton?.addEventListener("click", () => addEntry("experience"));
 addProjectButton?.addEventListener("click", () => addEntry("project"));
 addEducationButton?.addEventListener("click", () => addEntry("education"));
@@ -675,6 +925,10 @@ saveProfileButton?.addEventListener("click", async () => {
 document.addEventListener("click", (event) => {
   const remove = event.target.closest(".remove-entry");
   if (remove) remove.closest(".entry-card")?.remove();
+  const playgroundButton = event.target.closest(".open-playground");
+  if (playgroundButton) {
+    openPlayground(playgroundButton.dataset.runId).catch((error) => setInlineStatus("error", error.message));
+  }
 });
 
 form.addEventListener("submit", async (event) => {
@@ -712,19 +966,8 @@ form.addEventListener("submit", async (event) => {
     setStatus(`${result.company}`, `${result.role} resume generated.`);
     setInlineStatus("success", "Resume generated and saved to your job-search history.");
 
-    const docx = document.createElement("a");
-    docx.href = result.docx_url;
-    docx.textContent = "Download DOCX";
-    if (downloads) downloads.appendChild(docx);
-
-    if (result.pdf_url) {
-      const pdf = document.createElement("a");
-      pdf.href = result.pdf_url;
-      pdf.textContent = "Download PDF";
-      if (downloads) downloads.appendChild(pdf);
-    }
-
     await loadHistory();
+    renderPlayground({ ...result.history_item, active_version: activeVersion(result.history_item) });
     document.querySelector("#history")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     setInlineStatus("error", error.message);

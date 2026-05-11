@@ -331,16 +331,54 @@
       </section>
 
       <section class="review app-only" id="history">
-        <div class="review-shell">
-          <div class="status-panel" id="status-panel">
-            <div class="orbital"></div>
+        <div class="review-shell playground-shell">
+          <aside class="status-panel score-panel" id="status-panel">
             <p class="eyebrow">Output</p>
             <h2 id="status-title">Ready</h2>
             <p id="status-copy">Your DOCX and PDF will appear here when the system finishes.</p>
-            <div class="downloads" id="downloads"></div>
-          </div>
+            <div class="overall-score">
+              <span id="overall-score">--</span>
+              <small>Overall</small>
+            </div>
+            <div class="score-list" id="score-list"></div>
+            <div class="keyword-gaps" id="keyword-gaps"></div>
+          </aside>
 
-          <div class="history-panel">
+          <section class="preview-panel">
+            <div class="panel-head">
+              <div>
+                <p>Resume Preview</p>
+                <span id="playground-meta">Generate a resume to open the playground.</span>
+              </div>
+              <select id="version-select" aria-label="Resume version"></select>
+            </div>
+            <div class="resume-preview-empty" id="preview-empty">
+              <span>PDF preview will appear here.</span>
+            </div>
+            <iframe class="resume-preview-frame hidden" id="resume-preview" title="Generated resume preview"></iframe>
+            <div class="downloads" id="downloads"></div>
+          </section>
+
+          <aside class="history-panel playground-panel">
+            <div class="panel-head">
+              <p>AI Playground</p>
+              <span id="active-run-label">No resume</span>
+            </div>
+            <div class="proof-panel">
+              <strong>Proof-first ATS gaps</strong>
+              <p>Unsupported JD keywords need your proof before regeneration.</p>
+              <div id="proof-list"></div>
+              <button class="secondary-button" type="button" id="save-proof">Save Proof</button>
+            </div>
+            <label class="playground-chat">
+              <span>Refinement request</span>
+              <textarea id="playground-message" placeholder="Example: Make this more data science focused, and add AWS S3 because I used it in my analytics project."></textarea>
+            </label>
+            <button type="button" id="regenerate-resume">Regenerate Version</button>
+            <div class="playground-notes" id="playground-notes"></div>
+          </aside>
+
+          <div class="history-panel history-wide">
             <div class="panel-head">
               <p>Application History</p>
               <span id="history-count">0</span>
