@@ -158,76 +158,221 @@ def active_version(item: dict) -> dict:
 def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
     text = json.dumps(profile or {}, ensure_ascii=False)
     for item in proof or []:
-        text += " " + " ".join(str(item.get(key, "")) for key in ["keyword", "where", "proof"])
+        if item.get("used") is True:
+            text += " " + " ".join(str(item.get(key, "")) for key in ["keyword", "where", "proof"])
     return text
 
 
-def important_jd_terms(jd_text: str) -> list[str]:
-    text = jd_text or ""
-    lowered = text.lower()
-    curated = [
-        "Python", "SQL", "Pandas", "NumPy", "scikit-learn", "TensorFlow", "PyTorch",
-        "machine learning", "deep learning", "statistics", "data analysis", "data cleaning",
-        "data visualization", "dashboard", "Tableau", "Power BI", "Matplotlib", "Seaborn",
-        "AWS", "Azure", "GCP", "S3", "EC2", "Lambda", "Glue", "Redshift", "SageMaker",
-        "Databricks", "Snowflake", "ETL", "data pipeline", "model testing", "training",
-        "overfitting", "SQL databases", "communication", "collaboration", "reports",
-        "real datasets", "Kaggle", "GitHub", "cloud platforms", "problem-solving",
-    ]
-    terms = [term for term in curated if re.search(rf"\b{re.escape(term.lower())}\b", lowered)]
+JD_SIGNAL_CATALOG = {
+    "technical_tools": [
+        ("Python", [r"\bpython\b"]),
+        ("PyTorch", [r"\bpytorch\b"]),
+        ("TensorFlow", [r"\btensorflow\b"]),
+        ("scikit-learn", [r"\bscikit[- ]learn\b", r"\bsklearn\b"]),
+        ("LLM", [r"\bllm\b", r"\blarge language model"]),
+        ("VLM", [r"\bvlm\b", r"\bvision language model"]),
+        ("dLLM", [r"\bdllm\b"]),
+        ("VLA", [r"\bvla\b"]),
+        ("video generation", [r"\bvideo generations?\b"]),
+        ("distributed training", [r"\bdistributed training\b"]),
+        ("large-scale data processing", [r"\blarge[- ]scale data processing\b"]),
+        ("simulation platforms", [r"\bsimulation platforms?\b"]),
+    ],
+    "functional_work": [
+        ("model training", [r"\bmodel training\b", r"\btraining\b"]),
+        ("fine-tuning", [r"\bfine[- ]tuning\b"]),
+        ("model optimization", [r"\boptimization\b", r"\boptimizing\b"]),
+        ("model monitoring", [r"\bmonitoring\b"]),
+        ("closed-loop evaluation", [r"\bclosed[- ]loop evaluation\b"]),
+        ("scenario coverage", [r"\bscenario coverage\b"]),
+        ("human-led triaging", [r"\bhuman[- ]led triaging\b", r"\btriaging\b"]),
+        ("high-volume workflows", [r"\bhigh[- ]volume workflows?\b"]),
+        ("critical anomalies", [r"\bcritical anomalies\b", r"\banomal(?:y|ies)\b"]),
+        ("fleet-scale assessment", [r"\bfleet[- ]scale assessment\b"]),
+        ("evaluation systems", [r"\bevaluation systems?\b"]),
+        ("training and evaluation loops", [r"\btraining and evaluation loops?\b"]),
+        ("end-to-end ML systems", [r"\bend[- ]to[- ]end\b.*\bml systems?\b", r"\bshipping impactful ml systems\b"]),
+    ],
+    "ml_methods": [
+        ("reinforcement learning", [r"\breinforcement learning\b", r"\bstrong rl\b"]),
+        ("RL-style methods", [r"\brl[- ]style methods?\b"]),
+        ("reward objectives", [r"\breward objectives?\b", r"\breward\s*/\s*preference objectives?\b"]),
+        ("preference objectives", [r"\bpreference objectives?\b"]),
+        ("preference optimization", [r"\bpreference/feedback optimization\b", r"\bpreference optimization\b"]),
+        ("RLHF", [r"\brlhf\b", r"\brl from human preferences\b"]),
+        ("policy learning", [r"\bpolicy learning\b"]),
+        ("offline RL", [r"\boffline rl\b", r"\boffline/online rl\b"]),
+        ("online RL", [r"\bonline rl\b", r"\boffline/online rl\b"]),
+        ("sequence modeling", [r"\bsequence modeling\b"]),
+        ("generative models", [r"\bgenerative models?\b"]),
+        ("post-training techniques", [r"\bpost[- ]training techniques?\b"]),
+    ],
+    "domain_signals": [
+        ("autonomous vehicles", [r"\bautonomous vehicles?\b"]),
+        ("autonomous driving", [r"\bautonomous driving\b"]),
+        ("robotics", [r"\brobotics\b"]),
+        ("complex simulation environments", [r"\bcomplex simulation environments?\b"]),
+        ("simulation-aligned workflows", [r"\bsimulation[- ]aligned workflows?\b"]),
+        ("self-driving behavior", [r"\bself[- ]driving behavior\b"]),
+        ("driving behaviors", [r"\bdriving behaviors?\b"]),
+        ("safety-critical AI systems", [r"\bsafety[- ]critical ai systems?\b"]),
+        ("real-world exposure", [r"\breal[- ]world exposure\b"]),
+    ],
+    "collaboration_signals": [
+        ("Prediction teams", [r"\bprediction\b"]),
+        ("Planning teams", [r"\bplanning\b"]),
+        ("Research teams", [r"\bresearch\b"]),
+        ("platform/engineering leads", [r"\bplatform/engineering leads?\b", r"\bplatform teams?\b"]),
+        ("cross-cutting improvements", [r"\bcross[- ]cutting improvements?\b"]),
+        ("technical leadership", [r"\btechnical leadership\b"]),
+        ("stakeholder alignment", [r"\binfluencing stakeholders\b", r"\baligning teams\b"]),
+        ("communication of trade-offs", [r"\bcomplex trade[- ]offs\b"]),
+    ],
+    "seniority_signals": [
+        ("production-grade ML", [r"\bproduction[- ]grade\b", r"\bproduction[- ]oriented ml\b"]),
+        ("ambiguous technical work", [r"\bambiguous technical work\b"]),
+        ("problem framing", [r"\bproblem framing\b"]),
+        ("reliable delivery", [r"\breliable delivery\b"]),
+        ("evaluation rigor", [r"\bevaluation rigor\b"]),
+        ("3+ years ML production experience", [r"\b3\+ years\b.*\bml\b"]),
+        ("M.S. or Ph.D.", [r"\bm\.s\.\b", r"\bph\.d\.\b"]),
+    ],
+}
 
-    for match in re.finditer(r"\b[A-Z][A-Za-z0-9+#./-]*(?:\s+[A-Z][A-Za-z0-9+#./-]*){0,2}\b", text):
-        value = match.group(0).strip(" .,:;()[]")
-        if 2 <= len(value) <= 36 and value.lower() not in {"we", "the", "job", "about"}:
-            terms.append(value)
 
-    for pattern in [
-        r"\b(?:build|building|testing|training|cleaning|preparing|visualization|dashboards?|reports?|databases?|models?)\b(?:\s+\w+){0,3}",
-        r"\b(?:data|machine learning|cloud|statistical|academic|internship)\s+\w+(?:\s+\w+)?\b",
-    ]:
-        for match in re.finditer(pattern, lowered):
-            phrase = re.sub(r"\s+", " ", match.group(0)).strip()
-            if len(phrase.split()) >= 2:
-                terms.append(phrase)
+SECTION_MAP = {
+    "about_company": {"about", "description", "company", "overview", "who we are"},
+    "responsibilities": {"responsibility", "responsibilities", "what you'll do", "what you will do", "role responsibilities"},
+    "requirements": {"requirements", "required", "qualifications", "minimum qualifications"},
+    "preferred": {"preferred", "nice to have", "preferred qualifications"},
+    "benefits_compensation": {"compensation", "benefits", "base salary", "salary", "privacy"},
+}
 
-    seen = set()
-    cleaned = []
-    stop = {"full time", "onsite hybrid", "required skills", "preferred nice", "key responsibilities"}
-    for term in terms:
-        term = re.sub(r"\s+", " ", term).strip(" .,:;()[]")
-        key = term.lower()
-        if key in seen or key in stop or " with" in key or len(key) < 2:
+
+def normalize_heading(line: str) -> str:
+    return re.sub(r"[^a-z0-9 +'/-]+", "", line.strip().lower()).strip()
+
+
+def parse_jd_sections(jd_text: str) -> dict:
+    sections = {
+        "about_company": [],
+        "responsibilities": [],
+        "requirements": [],
+        "preferred": [],
+        "benefits_compensation": [],
+        "other": [],
+    }
+    current = "other"
+    for raw in (jd_text or "").splitlines():
+        line = raw.strip(" \t•-*")
+        if not line:
             continue
-        seen.add(key)
-        cleaned.append(term)
-    return cleaned[:45]
+        heading = normalize_heading(line)
+        matched = None
+        for section, aliases in SECTION_MAP.items():
+            if heading in aliases or any(heading.startswith(alias + " ") for alias in aliases):
+                matched = section
+                break
+        if matched:
+            current = matched
+            continue
+        sections[current].append(line)
+    return {key: "\n".join(value) for key, value in sections.items()}
 
 
-def contains_term(text: str, term: str) -> bool:
-    return re.search(rf"\b{re.escape(term.lower())}\b", (text or "").lower()) is not None
+def high_signal_jd_text(sections: dict) -> str:
+    return "\n".join(
+        sections.get(key, "")
+        for key in ["responsibilities", "requirements", "preferred"]
+        if sections.get(key)
+    )
 
 
-def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof: list[dict] | None = None) -> dict:
-    terms = important_jd_terms(jd_text)
+def extract_jd_intelligence(jd_text: str) -> dict:
+    sections = parse_jd_sections(jd_text)
+    signal_text = high_signal_jd_text(sections)
+    if not signal_text.strip():
+        signal_text = "\n".join(sections.values())
+    signals = {category: [] for category in JD_SIGNAL_CATALOG}
+    seen = set()
+
+    for category, items in JD_SIGNAL_CATALOG.items():
+        for term, patterns in items:
+            if any(re.search(pattern, signal_text, re.IGNORECASE | re.DOTALL) for pattern in patterns):
+                key = term.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                signals[category].append({
+                    "term": term,
+                    "category": category,
+                    "label": category.replace("_", " ").title(),
+                })
+
+    important_terms = [item for values in signals.values() for item in values]
+    return {
+        "sections": sections,
+        "signals": signals,
+        "important_terms": important_terms,
+        "ignored_sections": ["about_company", "benefits_compensation"],
+    }
+
+
+def ensure_jd_intelligence(item_or_jd) -> dict:
+    if isinstance(item_or_jd, dict):
+        return item_or_jd.get("jd_intelligence") or extract_jd_intelligence(item_or_jd.get("jd", ""))
+    return extract_jd_intelligence(str(item_or_jd or ""))
+
+
+def important_jd_terms(jd_text: str) -> list[dict]:
+    return extract_jd_intelligence(jd_text).get("important_terms", [])
+
+
+def signal_term(signal) -> str:
+    return signal.get("term", "") if isinstance(signal, dict) else str(signal)
+
+
+def contains_term(text: str, signal) -> bool:
+    term = signal_term(signal)
+    if not term:
+        return False
+    normalized_text = (text or "").lower()
+    normalized_term = term.lower()
+    if re.search(rf"\b{re.escape(normalized_term)}\b", normalized_text):
+        return True
+    aliases = {
+        "RL-style methods": ["rl", "reinforcement learning"],
+        "reinforcement learning": ["rl"],
+        "LLM": ["large language model", "llms"],
+        "VLM": ["vision language model", "vlms"],
+        "fine-tuning": ["finetuning", "fine tuning"],
+        "model monitoring": ["monitoring"],
+        "distributed training": ["distributed model training"],
+    }
+    return any(re.search(rf"\b{re.escape(alias.lower())}\b", normalized_text) for alias in aliases.get(term, []))
+
+
+def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof: list[dict] | None = None, jd_intelligence: dict | None = None) -> dict:
+    intelligence = jd_intelligence or extract_jd_intelligence(jd_text)
+    terms = intelligence.get("important_terms", [])
     generated_text = flatten_generated_text(generated_data or {})
     evidence_text = profile_to_text(profile, proof)
     covered = []
     supported_missing = []
     needs_user_proof = []
     not_recommended = []
-    high_risk = {"sagemaker", "redshift", "glue", "lambda", "ec2", "s3", "databricks", "snowflake", "azure", "gcp"}
+    high_risk_categories = {"domain_signals", "ml_methods", "seniority_signals", "technical_tools"}
 
-    for term in terms:
-        if contains_term(generated_text, term):
-            covered.append(term)
-        elif contains_term(evidence_text, term):
-            supported_missing.append(term)
-        elif term.lower() in high_risk:
-            needs_user_proof.append(term)
-        elif len(term.split()) > 3:
-            not_recommended.append(term)
+    for signal in terms:
+        category = signal.get("category", "") if isinstance(signal, dict) else ""
+        if contains_term(generated_text, signal):
+            covered.append(signal)
+        elif contains_term(evidence_text, signal):
+            supported_missing.append(signal)
+        elif category in high_risk_categories:
+            needs_user_proof.append(signal)
         else:
-            needs_user_proof.append(term)
+            not_recommended.append(signal)
 
     total = max(1, len(terms))
     return {
@@ -240,8 +385,8 @@ def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof:
     }
 
 
-def score_resume(jd_text: str, generated_data: dict, profile: dict, pdf_path: str | None, proof: list[dict] | None = None) -> dict:
-    gaps = build_keyword_gaps(jd_text, generated_data, profile, proof)
+def score_resume(jd_text: str, generated_data: dict, profile: dict, pdf_path: str | None, proof: list[dict] | None = None, jd_intelligence: dict | None = None) -> dict:
+    gaps = build_keyword_gaps(jd_text, generated_data, profile, proof, jd_intelligence=jd_intelligence)
     resume_text = flatten_generated_text(generated_data or {})
     words = len(re.findall(r"\b[\w+#./-]+\b", resume_text))
     proof_penalty = min(45, len(gaps["needs_user_proof"]) * 5)
@@ -312,7 +457,7 @@ def merge_profile_with_proof(profile: dict, proof: list[dict]) -> dict:
     projects = merged.setdefault("projects", [])
     proof_lines = []
     for item in proof:
-        if item.get("used") is False:
+        if item.get("used") is not True:
             continue
         keyword = str(item.get("keyword", "")).strip()
         detail = str(item.get("proof", "")).strip()
@@ -325,6 +470,29 @@ def merge_profile_with_proof(profile: dict, proof: list[dict]) -> dict:
             "description": " ".join(proof_lines),
         })
     return merged
+
+
+def intelligence_summary(jd_intelligence: dict, supported_missing: list, proven_terms: list) -> str:
+    signals = jd_intelligence.get("signals", {}) if jd_intelligence else {}
+    lines = ["JD INTELLIGENCE SIGNALS TO PRIORITIZE:"]
+    for category, items in signals.items():
+        values = [signal_term(item) for item in items]
+        if values:
+            lines.append(f"- {category.replace('_', ' ').title()}: {', '.join(values)}")
+    if supported_missing:
+        lines.append("SUPPORTED MISSING TERMS TO ADD WHERE NATURAL:")
+        lines.extend(f"- {signal_term(item)}" for item in supported_missing)
+    if proven_terms:
+        lines.append("USER-PROVEN TERMS TO ADD WHERE TRUTHFUL:")
+        lines.extend(f"- {item}" for item in proven_terms)
+    lines.append("Do not add unproven needs_user_proof terms.")
+    return "\n".join(lines)
+
+
+def ensure_item_intelligence(item: dict) -> dict:
+    if not item.get("jd_intelligence"):
+        item["jd_intelligence"] = extract_jd_intelligence(item.get("jd", ""))
+    return item["jd_intelligence"]
 
 
 def save_uploaded_file(field, destination: Path) -> Path | None:
@@ -469,12 +637,14 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         )
         result = copy_version_files(result, run_dir, "v1")
         profile_for_analysis = profile_data if profile_json.strip() else {}
-        keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile_for_analysis)
+        jd_intelligence = extract_jd_intelligence(jd_text)
+        keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile_for_analysis, jd_intelligence=jd_intelligence)
         analysis = score_resume(
             jd_text,
             result["structured_resume"],
             profile_for_analysis,
             result["pdf_path"],
+            jd_intelligence=jd_intelligence,
         )
         version = {
             "id": "v1",
@@ -484,6 +654,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "docx_path": result["docx_path"],
             "pdf_path": result["pdf_path"],
             "structured_resume": result["structured_resume"],
+            "jd_intelligence": jd_intelligence,
             "analysis": analysis,
             "keyword_gaps": keyword_gaps,
         }
@@ -502,6 +673,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "pdf_path": result["pdf_path"],
             "structured_resume": result["structured_resume"],
             "profile": profile_for_analysis,
+            "jd_intelligence": jd_intelligence,
+            "api_key_available": bool(api_key or os.environ.get("OPENAI_API_KEY")),
             "skip_pdf": skip_pdf,
             "versions": [version],
             "active_version_id": "v1",
@@ -535,6 +708,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         if not item:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
+        if not item.get("jd_intelligence"):
+            item = update_history_item(run_id, lambda current: self.rescore_resume_item(current)) or item
         version = active_version(item)
         payload = dict(item)
         payload["active_version"] = version
@@ -585,9 +760,10 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         if not isinstance(proof, list):
             proof = []
         item["user_proof"] = proof
+        jd_intelligence = ensure_item_intelligence(item)
         version = active_version(item)
-        gaps = build_keyword_gaps(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), proof)
-        analysis = score_resume(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), version.get("pdf_path"), proof)
+        gaps = build_keyword_gaps(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), proof, jd_intelligence=jd_intelligence)
+        analysis = score_resume(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), version.get("pdf_path"), proof, jd_intelligence=jd_intelligence)
         item["keyword_gaps"] = gaps
         item["analysis"] = analysis
         version["keyword_gaps"] = gaps
@@ -609,10 +785,11 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         return item
 
     def rescore_resume_item(self, item: dict) -> dict:
+        jd_intelligence = ensure_item_intelligence(item)
         version = active_version(item)
         proof = item.get("user_proof", [])
-        gaps = build_keyword_gaps(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), proof)
-        analysis = score_resume(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), version.get("pdf_path"), proof)
+        gaps = build_keyword_gaps(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), proof, jd_intelligence=jd_intelligence)
+        analysis = score_resume(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), version.get("pdf_path"), proof, jd_intelligence=jd_intelligence)
         item["keyword_gaps"] = gaps
         item["analysis"] = analysis
         version["keyword_gaps"] = gaps
@@ -623,6 +800,9 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         item = find_history_item(run_id)
         if not item:
             return None
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise ValueError("Regeneration needs an OpenAI key configured on the server.")
+        jd_intelligence = ensure_item_intelligence(item)
         proof = body.get("proof")
         if isinstance(proof, list):
             item["user_proof"] = proof
@@ -633,9 +813,28 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         proof_text = "\n".join(
             f"- {entry.get('keyword', '')}: {entry.get('proof', '')}"
             for entry in item.get("user_proof", [])
-            if entry.get("used") is not False and entry.get("proof")
+            if entry.get("used") is True and entry.get("proof")
         )
         augmented_jd = item.get("jd", "")
+        previous = active_version(item)
+        current_gaps = build_keyword_gaps(
+            item.get("jd", ""),
+            previous.get("structured_resume", {}),
+            item.get("profile", {}),
+            item.get("user_proof", []),
+            jd_intelligence=jd_intelligence,
+        )
+        proven_terms = [
+            entry.get("keyword", "")
+            for entry in item.get("user_proof", [])
+            if entry.get("used") is True and entry.get("proof")
+        ]
+        augmented_jd += "\n\n" + intelligence_summary(
+            jd_intelligence,
+            current_gaps.get("supported_missing", []),
+            proven_terms,
+        )
+        augmented_jd += "\n\nPREVIOUS STRUCTURED RESUME VERSION:\n" + json.dumps(previous.get("structured_resume", {}), indent=2)
         if proof_text:
             augmented_jd += "\n\nUSER-VERIFIED PROOF TO USE ONLY WHERE CREDIBLE:\n" + proof_text
         if instruction:
@@ -652,8 +851,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             skip_pdf=item.get("skip_pdf", False),
         )
         result = copy_version_files(result, run_dir, version_id)
-        gaps = build_keyword_gaps(item.get("jd", ""), result["structured_resume"], profile, item.get("user_proof", []))
-        analysis = score_resume(item.get("jd", ""), result["structured_resume"], profile, result.get("pdf_path"), item.get("user_proof", []))
+        gaps = build_keyword_gaps(item.get("jd", ""), result["structured_resume"], profile, item.get("user_proof", []), jd_intelligence=jd_intelligence)
+        analysis = score_resume(item.get("jd", ""), result["structured_resume"], profile, result.get("pdf_path"), item.get("user_proof", []), jd_intelligence=jd_intelligence)
         version = {
             "id": version_id,
             "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -662,6 +861,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "docx_path": result["docx_path"],
             "pdf_path": result["pdf_path"],
             "structured_resume": result["structured_resume"],
+            "jd_intelligence": jd_intelligence,
             "analysis": analysis,
             "keyword_gaps": gaps,
         }
@@ -672,6 +872,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             current["docx_path"] = result["docx_path"]
             current["pdf_path"] = result["pdf_path"]
             current["structured_resume"] = result["structured_resume"]
+            current["jd_intelligence"] = jd_intelligence
             current["analysis"] = analysis
             current["keyword_gaps"] = gaps
             current["user_proof"] = item.get("user_proof", [])

@@ -1492,11 +1492,23 @@ button:disabled {
   color: var(--paper);
 }
 
+.gap-group {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.gap-group b {
+  color: rgba(246, 243, 238, 0.82);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .gap-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
 }
 
 .gap-tags span {
@@ -1510,8 +1522,16 @@ button:disabled {
   color: #d8c3a5;
 }
 
+.gap-tags .covered {
+  color: #a8b5a2;
+}
+
 .gap-tags .proof {
   color: #f2b5a8;
+}
+
+.gap-tags .risk {
+  color: #b9b0a4;
 }
 
 .resume-preview-empty,
@@ -1579,6 +1599,15 @@ button:disabled {
   align-items: center;
   gap: 8px;
   text-transform: none;
+}
+
+.proof-category {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .proof-card input {

@@ -596,16 +596,46 @@ function renderScores(analysis) {
   }
 }
 
+function signalTerm(signal) {
+  return typeof signal === "string" ? signal : signal?.term || "";
+}
+
+function signalCategory(signal) {
+  if (typeof signal === "string") return "";
+  return signal?.label || String(signal?.category || "").replaceAll("_", " ");
+}
+
+function renderSignalTags(items, className) {
+  return (items || []).slice(0, 12).map((signal) => {
+    const term = signalTerm(signal);
+    const category = signalCategory(signal);
+    return `<span class="${className}" title="${escapeHtml(category)}">${escapeHtml(term)}</span>`;
+  }).join("");
+}
+
+function renderGapGroup(title, items, className) {
+  if (!items?.length) return "";
+  return `
+    <div class="gap-group">
+      <b>${escapeHtml(title)}</b>
+      <div class="gap-tags">${renderSignalTags(items, className)}</div>
+    </div>
+  `;
+}
+
 function renderKeywordGaps(gaps) {
   if (!keywordGaps) return;
   const safe = gaps.supported_missing || [];
   const proof = gaps.needs_user_proof || [];
   const covered = gaps.covered || [];
+  const notRecommended = gaps.not_recommended || [];
   keywordGaps.innerHTML = `
-    <strong>Keyword coverage: ${gaps.coverage_percent ?? "--"}%</strong>
-    <p>${covered.length} covered - ${safe.length} safe to add - ${proof.length} need proof</p>
-    <div class="gap-tags">${safe.slice(0, 10).map((term) => `<span class="safe">${escapeHtml(term)}</span>`).join("")}</div>
-    <div class="gap-tags">${proof.slice(0, 10).map((term) => `<span class="proof">${escapeHtml(term)}</span>`).join("")}</div>
+    <strong>JD signal coverage: ${gaps.coverage_percent ?? "--"}%</strong>
+    <p>${covered.length} covered - ${safe.length} safe to add - ${proof.length} need proof - ${notRecommended.length} risky without stronger evidence</p>
+    ${renderGapGroup("Covered", covered, "covered")}
+    ${renderGapGroup("Safe to add", safe, "safe")}
+    ${renderGapGroup("Needs your proof", proof, "proof")}
+    ${renderGapGroup("Not recommended without stronger evidence", notRecommended, "risk")}
   `;
 }
 
@@ -614,16 +644,25 @@ function renderProofQuestions(item, gaps) {
   const existing = item.user_proof || [];
   const existingMap = new Map(existing.map((proof) => [String(proof.keyword || "").toLowerCase(), proof]));
   const terms = gaps.needs_user_proof || [];
+  if (regenerateButton) {
+    regenerateButton.textContent = terms.length ? "Regenerate with Proven Signals" : ((gaps.supported_missing || []).length ? "Regenerate with Safe Additions" : "Regenerate Version");
+  }
   if (!terms.length) {
-    proofList.innerHTML = `<div class="proof-empty">No unsupported critical keywords. You can regenerate with chat instructions anytime.</div>`;
+    const hasSafe = (gaps.supported_missing || []).length > 0;
+    proofList.innerHTML = `<div class="proof-empty">${hasSafe ? "Resume is fully aligned with supported JD signals. Safe additions can be regenerated without proof." : "Resume is fully aligned with supported JD signals."}</div>`;
     return;
   }
-  proofList.innerHTML = terms.map((term) => {
+  proofList.innerHTML = terms.map((signal) => {
+    const term = signalTerm(signal);
+    const category = signalCategory(signal);
     const saved = existingMap.get(String(term).toLowerCase()) || {};
     return `
-      <article class="proof-card" data-keyword="${escapeHtml(term)}">
-        <strong>${escapeHtml(term)}</strong>
-        <label><input type="checkbox" data-field="used" ${saved.used === false ? "" : "checked"} /> I have used this</label>
+      <article class="proof-card" data-keyword="${escapeHtml(term)}" data-category="${escapeHtml(category)}">
+        <div>
+          <strong>${escapeHtml(term)}</strong>
+          <span class="proof-category">${escapeHtml(category)}</span>
+        </div>
+        <label><input type="checkbox" data-field="used" ${saved.used === true ? "checked" : ""} /> Yes, I have used this</label>
         <select data-field="where">
           ${["Experience", "Project", "Skills", "Education", "Certification", "Other"].map((value) => `<option ${saved.where === value ? "selected" : ""}>${value}</option>`).join("")}
         </select>
@@ -637,6 +676,7 @@ function collectProof() {
   if (!proofList) return [];
   return [...proofList.querySelectorAll(".proof-card")].map((card) => ({
     keyword: card.dataset.keyword || "",
+    category: card.dataset.category || "",
     used: card.querySelector('[data-field="used"]')?.checked || false,
     where: card.querySelector('[data-field="where"]')?.value || "",
     proof: card.querySelector('[data-field="proof"]')?.value.trim() || "",
