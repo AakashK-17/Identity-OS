@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -9,6 +10,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 import cgi
+
+from openai import OpenAI
 
 from generate_resume import (
     BASE_RESUME,
@@ -25,6 +28,7 @@ UPLOAD_DIR = ROOT / "uploads"
 RUN_DIR = ROOT / "runs"
 DATA_DIR = ROOT / "data"
 HISTORY_FILE = DATA_DIR / "history.json"
+JD_CACHE_FILE = DATA_DIR / "jd_intelligence_cache.json"
 OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", DATA_DIR / "generated")).resolve()
 
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -33,6 +37,7 @@ DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESULTS: dict[str, dict] = {}
+JD_INTELLIGENCE_VERSION = 2
 
 
 MIME_TYPES = {
@@ -69,6 +74,23 @@ def load_history() -> dict:
 
 def save_history(data: dict) -> None:
     HISTORY_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def load_jd_cache() -> dict:
+    if not JD_CACHE_FILE.exists():
+        return {}
+    try:
+        return json.loads(JD_CACHE_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_jd_cache(data: dict) -> None:
+    JD_CACHE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def jd_cache_key(jd_text: str) -> str:
+    return hashlib.sha256((jd_text or "").encode("utf-8")).hexdigest()
 
 
 def user_key(email: str) -> str:
@@ -166,9 +188,13 @@ def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
 JD_SIGNAL_CATALOG = {
     "technical_tools": [
         ("Python", [r"\bpython\b"]),
+        ("SQL", [r"\bsql\b"]),
         ("PyTorch", [r"\bpytorch\b"]),
         ("TensorFlow", [r"\btensorflow\b"]),
         ("scikit-learn", [r"\bscikit[- ]learn\b", r"\bsklearn\b"]),
+        ("Google Cloud Platform", [r"\bgoogle cloud platform\b", r"\bgcp\b"]),
+        ("Qdrant", [r"\bqdrant\b"]),
+        ("vector databases", [r"\bvector databases?\b"]),
         ("LLM", [r"\bllm\b", r"\blarge language model"]),
         ("VLM", [r"\bvlm\b", r"\bvision language model"]),
         ("dLLM", [r"\bdllm\b"]),
@@ -183,6 +209,11 @@ JD_SIGNAL_CATALOG = {
         ("fine-tuning", [r"\bfine[- ]tuning\b"]),
         ("model optimization", [r"\boptimization\b", r"\boptimizing\b"]),
         ("model monitoring", [r"\bmonitoring\b"]),
+        ("channel ranking", [r"\bchannel ranking\b"]),
+        ("guide personalization", [r"\bguide personalization\b"]),
+        ("content recommendations", [r"\bcontent recommendations?\b"]),
+        ("feature engineering", [r"\brelevant features?\b", r"\bfeature engineering\b"]),
+        ("production deployment", [r"\bproduction deployment\b", r"\bdeploy\b.*\bproduction\b"]),
         ("closed-loop evaluation", [r"\bclosed[- ]loop evaluation\b"]),
         ("scenario coverage", [r"\bscenario coverage\b"]),
         ("human-led triaging", [r"\bhuman[- ]led triaging\b", r"\btriaging\b"]),
@@ -196,6 +227,8 @@ JD_SIGNAL_CATALOG = {
     "ml_methods": [
         ("reinforcement learning", [r"\breinforcement learning\b", r"\bstrong rl\b"]),
         ("RL-style methods", [r"\brl[- ]style methods?\b"]),
+        ("linear programming", [r"\blinear programming\b"]),
+        ("scheduling algorithms", [r"\bscheduling algorithms?\b"]),
         ("reward objectives", [r"\breward objectives?\b", r"\breward\s*/\s*preference objectives?\b"]),
         ("preference objectives", [r"\bpreference objectives?\b"]),
         ("preference optimization", [r"\bpreference/feedback optimization\b", r"\bpreference optimization\b"]),
@@ -217,6 +250,11 @@ JD_SIGNAL_CATALOG = {
         ("driving behaviors", [r"\bdriving behaviors?\b"]),
         ("safety-critical AI systems", [r"\bsafety[- ]critical ai systems?\b"]),
         ("real-world exposure", [r"\breal[- ]world exposure\b"]),
+        ("FAST ecosystem", [r"\bfast ecosystem\b", r"\bfree ad[- ]supported streaming television\b"]),
+        ("broadcast TV data structures", [r"\bbroadcast tv data structures?\b"]),
+        ("Electronic Programming Guide", [r"\belectronic programming guide\b", r"\bepg\b"]),
+        ("viewer engagement", [r"\bviewer engagement\b"]),
+        ("session duration", [r"\bsession duration\b"]),
     ],
     "collaboration_signals": [
         ("Prediction teams", [r"\bprediction\b"]),
@@ -241,7 +279,8 @@ JD_SIGNAL_CATALOG = {
 
 
 SECTION_MAP = {
-    "about_company": {"about", "description", "company", "overview", "who we are"},
+    "about_role": {"about the role", "role overview", "the role"},
+    "about_company": {"description", "company", "overview", "who we are", "about the company"},
     "responsibilities": {"responsibility", "responsibilities", "what you'll do", "what you will do", "role responsibilities"},
     "requirements": {"requirements", "required", "qualifications", "minimum qualifications"},
     "preferred": {"preferred", "nice to have", "preferred qualifications"},
@@ -256,6 +295,7 @@ def normalize_heading(line: str) -> str:
 def parse_jd_sections(jd_text: str) -> dict:
     sections = {
         "about_company": [],
+        "about_role": [],
         "responsibilities": [],
         "requirements": [],
         "preferred": [],
@@ -283,31 +323,121 @@ def parse_jd_sections(jd_text: str) -> dict:
 def high_signal_jd_text(sections: dict) -> str:
     return "\n".join(
         sections.get(key, "")
-        for key in ["responsibilities", "requirements", "preferred"]
+        for key in ["about_role", "responsibilities", "requirements", "preferred"]
         if sections.get(key)
     )
 
 
-def extract_jd_intelligence(jd_text: str) -> dict:
+SIGNAL_CATEGORIES = [
+    "technical_tools",
+    "functional_work",
+    "ml_methods",
+    "domain_signals",
+    "collaboration_signals",
+    "seniority_signals",
+]
+
+SIGNAL_LABELS = {
+    "technical_tools": "Technical Tool",
+    "functional_work": "Functional Work",
+    "ml_methods": "ML Method",
+    "domain_signals": "Domain Signal",
+    "collaboration_signals": "Collaboration Signal",
+    "seniority_signals": "Seniority Signal",
+}
+
+GENERIC_SIGNAL_STOPWORDS = {
+    "knowledge", "responsibilities", "responsibilities design", "benefits", "benefits competitive",
+    "current", "next", "train", "own", "ml", "collaborate", "design", "develop", "deploy",
+    "utilize", "requirements", "qualifications", "about", "role", "company", "equal opportunity",
+}
+
+
+def normalize_signal_text(value: str) -> str:
+    value = re.sub(r"^[•*\-\d.\s]+", "", str(value or "")).strip()
+    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"^(knowledge of|experience with|hands[- ]on experience with|proficiency in|understanding of)\s+", "", value, flags=re.IGNORECASE)
+    return value.strip(" .,:;()[]")
+
+
+def is_valid_signal(term: str) -> bool:
+    normalized = normalize_signal_text(term)
+    lowered = normalized.lower()
+    if not normalized or lowered in GENERIC_SIGNAL_STOPWORDS:
+        return False
+    if re.search(r"\b(?:salary|benefits?|401|medical|dental|vision|insurance|holiday|pto|tuition|equal opportunity|disability|veteran)\b", lowered):
+        return False
+    if re.search(r"\b(?:founded|nasdaq|cnbc|xprize|bessemer|silicon valley|company matching)\b", lowered):
+        return False
+    if len(normalized) < 3 or len(normalized.split()) > 7:
+        return False
+    if len(normalized.split()) == 1 and normalized.lower() not in {
+        "python", "sql", "pytorch", "tensorflow", "qdrant", "gcp", "rlhf", "llm", "vlm", "dllm", "vla",
+    }:
+        return False
+    return True
+
+
+def make_signal(term: str, category: str, source: str = "parser") -> dict:
+    normalized = normalize_signal_text(term)
+    canonical = {
+        "gcp": "Google Cloud Platform",
+        "epg": "Electronic Programming Guide",
+        "fast": "FAST ecosystem",
+        "rl": "reinforcement learning",
+    }.get(normalized.lower(), normalized)
+    return {
+        "term": canonical,
+        "category": category,
+        "label": SIGNAL_LABELS.get(category, category.replace("_", " ").title()),
+        "source": source,
+    }
+
+
+def normalize_llm_signal_payload(payload: dict, sections: dict, source: str) -> dict:
+    signals = {category: [] for category in SIGNAL_CATEGORIES}
+    seen = set()
+    for category in SIGNAL_CATEGORIES:
+        values = payload.get(category, [])
+        if not isinstance(values, list):
+            continue
+        for value in values[:18]:
+            term = value.get("term", "") if isinstance(value, dict) else str(value)
+            if not is_valid_signal(term):
+                continue
+            signal = make_signal(term, category, source)
+            key = signal["term"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            signals[category].append(signal)
+    important_terms = [item for values in signals.values() for item in values]
+    return {
+        "sections": sections,
+        "signals": signals,
+        "important_terms": important_terms,
+        "ignored_sections": ["about_company", "benefits_compensation"],
+        "source": source,
+    }
+
+
+def deterministic_jd_intelligence(jd_text: str) -> dict:
     sections = parse_jd_sections(jd_text)
     signal_text = high_signal_jd_text(sections)
     if not signal_text.strip():
         signal_text = "\n".join(sections.values())
-    signals = {category: [] for category in JD_SIGNAL_CATALOG}
+    signals = {category: [] for category in SIGNAL_CATEGORIES}
     seen = set()
 
     for category, items in JD_SIGNAL_CATALOG.items():
         for term, patterns in items:
             if any(re.search(pattern, signal_text, re.IGNORECASE | re.DOTALL) for pattern in patterns):
-                key = term.lower()
+                signal = make_signal(term, category, "deterministic")
+                key = signal["term"].lower()
                 if key in seen:
                     continue
                 seen.add(key)
-                signals[category].append({
-                    "term": term,
-                    "category": category,
-                    "label": category.replace("_", " ").title(),
-                })
+                signals[category].append(signal)
 
     important_terms = [item for values in signals.values() for item in values]
     return {
@@ -315,13 +445,73 @@ def extract_jd_intelligence(jd_text: str) -> dict:
         "signals": signals,
         "important_terms": important_terms,
         "ignored_sections": ["about_company", "benefits_compensation"],
+        "source": "deterministic",
     }
 
 
-def ensure_jd_intelligence(item_or_jd) -> dict:
+def llm_jd_intelligence(jd_text: str, api_key: str | None = None) -> dict | None:
+    key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not key:
+        return None
+    sections = parse_jd_sections(jd_text)
+    signal_text = high_signal_jd_text(sections)
+    if not signal_text.strip():
+        signal_text = jd_text
+    prompt = f"""
+You are the JD Intelligence Engine for a resume generation product.
+
+Extract only hiring-relevant resume signals from the HIGH-SIGNAL JD text.
+Ignore company description, awards, dates, compensation, benefits, equal opportunity, privacy text, and generic verbs.
+
+Return strict JSON with exactly these array keys:
+technical_tools, functional_work, ml_methods, domain_signals, collaboration_signals, seniority_signals
+
+Rules:
+- Each array item must be a concise keyword or phrase, 1-6 words.
+- Include tools, platforms, services, frameworks, methods, responsibilities, domain concepts, and seniority signals.
+- Do not output company names, product marketing, awards, cities, dates, salaries, benefits, or one-word generic verbs.
+- Do not output weak generic terms like "Knowledge", "Current", "Next", "Own", "Train", "Collaborate", or "ML".
+- Prefer exact JD terminology when it is meaningful, for example "Qdrant", "FAST metadata", "channel ranking", "guide personalization".
+- If a term needs proof before adding to a resume, still include it. The app will ask the user for proof.
+
+HIGH-SIGNAL JD TEXT:
+{signal_text[:9000]}
+"""
+    try:
+        client = OpenAI(api_key=key)
+        response = client.chat.completions.create(
+            model=os.environ.get("JD_INTELLIGENCE_MODEL", "gpt-4o-mini"),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        payload = json.loads(response.choices[0].message.content or "{}")
+        return normalize_llm_signal_payload(payload, sections, "llm")
+    except Exception as exc:
+        print(f"[jd-intelligence] falling back to deterministic parser: {exc}")
+        return None
+
+
+def extract_jd_intelligence(jd_text: str, api_key: str | None = None, force_refresh: bool = False) -> dict:
+    key = jd_cache_key(jd_text)
+    cache = load_jd_cache()
+    if not force_refresh and key in cache and cache[key].get("parser_version") == JD_INTELLIGENCE_VERSION:
+        return cache[key]
+
+    intelligence = llm_jd_intelligence(jd_text, api_key=api_key) or deterministic_jd_intelligence(jd_text)
+    intelligence["parser_version"] = JD_INTELLIGENCE_VERSION
+    cache[key] = intelligence
+    save_jd_cache(cache)
+    return intelligence
+
+
+def ensure_jd_intelligence(item_or_jd, api_key: str | None = None) -> dict:
     if isinstance(item_or_jd, dict):
-        return item_or_jd.get("jd_intelligence") or extract_jd_intelligence(item_or_jd.get("jd", ""))
-    return extract_jd_intelligence(str(item_or_jd or ""))
+        existing = item_or_jd.get("jd_intelligence")
+        if existing and existing.get("parser_version") == JD_INTELLIGENCE_VERSION:
+            return existing
+        return extract_jd_intelligence(item_or_jd.get("jd", ""), api_key=api_key, force_refresh=True)
+    return extract_jd_intelligence(str(item_or_jd or ""), api_key=api_key)
 
 
 def important_jd_terms(jd_text: str) -> list[dict]:
@@ -637,7 +827,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         )
         result = copy_version_files(result, run_dir, "v1")
         profile_for_analysis = profile_data if profile_json.strip() else {}
-        jd_intelligence = extract_jd_intelligence(jd_text)
+        jd_intelligence = extract_jd_intelligence(jd_text, api_key=api_key)
         keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile_for_analysis, jd_intelligence=jd_intelligence)
         analysis = score_resume(
             jd_text,
