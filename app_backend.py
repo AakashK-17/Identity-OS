@@ -990,9 +990,11 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         item = find_history_item(run_id)
         if not item:
             return None
-        if not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError("Regeneration needs an OpenAI key configured on the server.")
-        jd_intelligence = ensure_item_intelligence(item)
+        api_key = str(body.get("api_key", "")).strip() or None
+        active_api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not active_api_key:
+            raise ValueError("Regeneration needs an OpenAI key. Add it in the OpenAI API Key field or configure OPENAI_API_KEY on the server.")
+        jd_intelligence = ensure_item_intelligence(item, api_key=api_key)
         proof = body.get("proof")
         if isinstance(proof, list):
             item["user_proof"] = proof
@@ -1039,6 +1041,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             output_root=OUTPUT_ROOT,
             details=details,
             skip_pdf=item.get("skip_pdf", False),
+            api_key=api_key,
         )
         result = copy_version_files(result, run_dir, version_id)
         gaps = build_keyword_gaps(item.get("jd", ""), result["structured_resume"], profile, item.get("user_proof", []), jd_intelligence=jd_intelligence)

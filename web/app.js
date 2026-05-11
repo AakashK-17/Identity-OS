@@ -41,6 +41,7 @@ const playgroundMessage = document.querySelector("#playground-message");
 const regenerateButton = document.querySelector("#regenerate-resume");
 const playgroundNotes = document.querySelector("#playground-notes");
 const profileJsonInput = document.querySelector("#profile-json");
+const apiKeyInput = document.querySelector('input[name="api_key"]');
 const experienceList = document.querySelector("#experience-list");
 const projectList = document.querySelector("#project-list");
 const educationList = document.querySelector("#education-list");
@@ -724,21 +725,26 @@ async function regenerateActiveResume() {
     return;
   }
   regenerateButton.disabled = true;
+  const originalLabel = regenerateButton.textContent;
+  regenerateButton.textContent = "Regenerating...";
   setInlineStatus("busy", "Creating a new resume version from proof and chat instructions.");
+  setStatus("Regenerating", "Creating a new version from your proof, JD signals, and refinement request.");
   try {
     const response = await fetch(`/api/resume/${state.activeResume.id}/regenerate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ proof, instruction }),
+      body: JSON.stringify({ proof, instruction, api_key: apiKeyInput?.value.trim() || "" }),
     });
-    const item = await response.json();
+    const item = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(item.error || "Regeneration failed.");
     await loadHistory();
     renderPlayground({ ...item, active_version: activeVersion(item) });
     if (playgroundMessage) playgroundMessage.value = "";
     setInlineStatus("success", "New resume version generated.");
+    setStatus("Version Ready", "Your regenerated resume is now active in the playground.");
   } finally {
     regenerateButton.disabled = false;
+    regenerateButton.textContent = originalLabel || "Regenerate Version";
   }
 }
 
