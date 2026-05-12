@@ -56,7 +56,7 @@ DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESULTS: dict[str, dict] = {}
-JD_INTELLIGENCE_VERSION = 2
+JD_INTELLIGENCE_VERSION = 3
 
 
 MIME_TYPES = {
@@ -253,9 +253,37 @@ def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
 
 
 JD_SIGNAL_CATALOG = {
-    "technical_tools": [
+    "tools_platforms": [
         ("Python", [r"\bpython\b"]),
         ("SQL", [r"\bsql\b"]),
+        ("Excel", [r"\bexcel\b"]),
+        ("Tableau", [r"\btableau\b"]),
+        ("Power BI", [r"\bpower bi\b"]),
+        ("Salesforce", [r"\bsalesforce\b"]),
+        ("HubSpot", [r"\bhubspot\b"]),
+        ("Google Analytics", [r"\bgoogle analytics\b", r"\bga4\b"]),
+        ("REDCap", [r"\bredcap\b"]),
+        ("Qualtrics", [r"\bqualtrics\b"]),
+        ("SPSS", [r"\bspss\b"]),
+        ("SAS", [r"\bsas\b"]),
+        ("R", [r"\br programming\b", r"\bprogramming in r\b", r"\br\b"]),
+        ("MATLAB", [r"\bmatlab\b"]),
+        ("Workday", [r"\bworkday\b"]),
+        ("SAP", [r"\bsap\b"]),
+        ("Oracle", [r"\boracle\b"]),
+        ("NetSuite", [r"\bnetsuite\b"]),
+        ("QuickBooks", [r"\bquickbooks\b"]),
+        ("Jira", [r"\bjira\b"]),
+        ("Figma", [r"\bfigma\b"]),
+        ("AWS", [r"\baws\b", r"\bamazon web services\b"]),
+        ("Azure", [r"\bazure\b"]),
+        ("Snowflake", [r"\bsnowflake\b"]),
+        ("Databricks", [r"\bdatabricks\b"]),
+        ("Airflow", [r"\bairflow\b", r"\bapache airflow\b"]),
+        ("dbt", [r"\bdbt\b"]),
+        ("Docker", [r"\bdocker\b"]),
+        ("Kubernetes", [r"\bkubernetes\b", r"\bk8s\b"]),
+        ("Git", [r"\bgit\b", r"\bgithub\b", r"\bgitlab\b"]),
         ("PyTorch", [r"\bpytorch\b"]),
         ("TensorFlow", [r"\btensorflow\b"]),
         ("scikit-learn", [r"\bscikit[- ]learn\b", r"\bsklearn\b"]),
@@ -290,8 +318,23 @@ JD_SIGNAL_CATALOG = {
         ("evaluation systems", [r"\bevaluation systems?\b"]),
         ("training and evaluation loops", [r"\btraining and evaluation loops?\b"]),
         ("end-to-end ML systems", [r"\bend[- ]to[- ]end\b.*\bml systems?\b", r"\bshipping impactful ml systems\b"]),
+        ("dashboarding", [r"\bdashboarding\b", r"\bdashboards?\b"]),
+        ("reporting", [r"\breporting\b", r"\breports?\b"]),
+        ("data collection", [r"\bdata collection\b", r"\bcollecting data\b"]),
+        ("data analysis", [r"\bdata analysis\b", r"\banalyz(?:e|ing) data\b"]),
+        ("stakeholder reporting", [r"\bstakeholder reporting\b"]),
+        ("customer segmentation", [r"\bcustomer segmentation\b", r"\bsegmentation\b"]),
+        ("campaign optimization", [r"\bcampaign optimization\b", r"\boptimi[sz]e campaigns?\b"]),
+        ("product roadmap", [r"\bproduct roadmap\b", r"\broadmap\b"]),
+        ("backlog prioritization", [r"\bbacklog prioritization\b", r"\bprioriti[sz]e backlog\b"]),
+        ("user research", [r"\buser research\b", r"\bcustomer discovery\b"]),
+        ("requirements gathering", [r"\brequirements gathering\b", r"\bgather requirements\b"]),
+        ("patient recruitment", [r"\bpatient recruitment\b", r"\brecruit patients\b"]),
+        ("budgeting", [r"\bbudgeting\b", r"\bbudget management\b"]),
+        ("variance analysis", [r"\bvariance analysis\b"]),
+        ("financial reporting", [r"\bfinancial reporting\b"]),
     ],
-    "ml_methods": [
+    "methods_frameworks": [
         ("reinforcement learning", [r"\breinforcement learning\b", r"\bstrong rl\b"]),
         ("RL-style methods", [r"\brl[- ]style methods?\b"]),
         ("linear programming", [r"\blinear programming\b"]),
@@ -306,8 +349,23 @@ JD_SIGNAL_CATALOG = {
         ("sequence modeling", [r"\bsequence modeling\b"]),
         ("generative models", [r"\bgenerative models?\b"]),
         ("post-training techniques", [r"\bpost[- ]training techniques?\b"]),
+        ("Agile", [r"\bagile\b"]),
+        ("Scrum", [r"\bscrum\b"]),
+        ("A/B testing", [r"\ba/b testing\b", r"\bab testing\b"]),
+        ("forecasting", [r"\bforecasting\b"]),
+        ("quality assurance", [r"\bquality assurance\b", r"\bqa\b"]),
+        ("regulatory compliance", [r"\bregulatory compliance\b", r"\bcompliance\b"]),
+        ("IRB protocols", [r"\birb protocols?\b", r"\binstitutional review board\b"]),
+        ("HIPAA", [r"\bhipaa\b"]),
+        ("GAAP", [r"\bgaap\b"]),
+        ("SOX controls", [r"\bsox controls?\b", r"\bsarbanes[- ]oxley\b"]),
+        ("financial modeling", [r"\bfinancial modeling\b"]),
+        ("market research", [r"\bmarket research\b"]),
+        ("content strategy", [r"\bcontent strategy\b"]),
+        ("SEO", [r"\bseo\b", r"\bsearch engine optimization\b"]),
+        ("paid media", [r"\bpaid media\b", r"\bppc\b"]),
     ],
-    "domain_signals": [
+    "domain_context": [
         ("autonomous vehicles", [r"\bautonomous vehicles?\b"]),
         ("autonomous driving", [r"\bautonomous driving\b"]),
         ("robotics", [r"\brobotics\b"]),
@@ -322,8 +380,17 @@ JD_SIGNAL_CATALOG = {
         ("Electronic Programming Guide", [r"\belectronic programming guide\b", r"\bepg\b"]),
         ("viewer engagement", [r"\bviewer engagement\b"]),
         ("session duration", [r"\bsession duration\b"]),
+        ("healthcare compliance", [r"\bhealthcare compliance\b", r"\bhipaa\b"]),
+        ("clinical research", [r"\bclinical research\b"]),
+        ("patient data", [r"\bpatient data\b"]),
+        ("supply chain", [r"\bsupply chain\b"]),
+        ("inventory management", [r"\binventory management\b"]),
+        ("demand planning", [r"\bdemand planning\b"]),
+        ("fintech lending", [r"\bfintech\b", r"\blending\b"]),
+        ("payments", [r"\bpayments?\b", r"\bpayment processing\b"]),
+        ("B2B SaaS", [r"\bb2b saas\b", r"\bsaas\b"]),
     ],
-    "collaboration_signals": [
+    "stakeholder_scope": [
         ("Prediction teams", [r"\bprediction\b"]),
         ("Planning teams", [r"\bplanning\b"]),
         ("Research teams", [r"\bresearch\b"]),
@@ -332,6 +399,9 @@ JD_SIGNAL_CATALOG = {
         ("technical leadership", [r"\btechnical leadership\b"]),
         ("stakeholder alignment", [r"\binfluencing stakeholders\b", r"\baligning teams\b"]),
         ("communication of trade-offs", [r"\bcomplex trade[- ]offs\b"]),
+        ("executive reporting", [r"\bexecutive reporting\b"]),
+        ("vendor management", [r"\bvendor management\b", r"\bvendor relationships?\b"]),
+        ("client-facing communication", [r"\bclient[- ]facing\b"]),
     ],
     "seniority_signals": [
         ("production-grade ML", [r"\bproduction[- ]grade\b", r"\bproduction[- ]oriented ml\b"]),
@@ -346,12 +416,12 @@ JD_SIGNAL_CATALOG = {
 
 
 SECTION_MAP = {
-    "about_role": {"about the role", "role overview", "the role"},
-    "about_company": {"description", "company", "overview", "who we are", "about the company"},
-    "responsibilities": {"responsibility", "responsibilities", "what you'll do", "what you will do", "role responsibilities"},
-    "requirements": {"requirements", "required", "qualifications", "minimum qualifications"},
-    "preferred": {"preferred", "nice to have", "preferred qualifications"},
-    "benefits_compensation": {"compensation", "benefits", "base salary", "salary", "privacy"},
+    "about_role": {"about the role", "about this role", "role overview", "the role", "about the job", "job summary", "position summary"},
+    "about_company": {"description", "company", "overview", "who we are", "about the company", "about us", "our company"},
+    "responsibilities": {"responsibility", "responsibilities", "what you'll do", "what you will do", "role responsibilities", "duties", "essential functions"},
+    "requirements": {"requirements", "required", "required skills", "qualifications", "minimum qualifications", "what you bring", "basic qualifications"},
+    "preferred": {"preferred", "preferred skills", "nice to have", "preferred qualifications", "desired qualifications"},
+    "benefits_compensation": {"compensation", "benefits", "base salary", "salary", "privacy", "equal opportunity", "eeo", "perks"},
 }
 
 
@@ -396,20 +466,20 @@ def high_signal_jd_text(sections: dict) -> str:
 
 
 SIGNAL_CATEGORIES = [
-    "technical_tools",
+    "tools_platforms",
     "functional_work",
-    "ml_methods",
-    "domain_signals",
-    "collaboration_signals",
+    "methods_frameworks",
+    "domain_context",
+    "stakeholder_scope",
     "seniority_signals",
 ]
 
 SIGNAL_LABELS = {
-    "technical_tools": "Technical Tool",
+    "tools_platforms": "Tool / Platform",
     "functional_work": "Functional Work",
-    "ml_methods": "ML Method",
-    "domain_signals": "Domain Signal",
-    "collaboration_signals": "Collaboration Signal",
+    "methods_frameworks": "Method / Framework",
+    "domain_context": "Domain Context",
+    "stakeholder_scope": "Stakeholder Scope",
     "seniority_signals": "Seniority Signal",
 }
 
@@ -417,35 +487,89 @@ GENERIC_SIGNAL_STOPWORDS = {
     "knowledge", "responsibilities", "responsibilities design", "benefits", "benefits competitive",
     "current", "next", "train", "own", "ml", "collaborate", "design", "develop", "deploy",
     "utilize", "requirements", "qualifications", "about", "role", "company", "equal opportunity",
+    "preferred", "required", "job", "work", "team", "teams", "business", "competitive", "applicant",
+    "candidate", "employee", "employees", "excellent", "strong", "responsible", "ability", "skills",
 }
+
+BOILERPLATE_SIGNAL_PATTERN = re.compile(
+    r"\b(?:salary|benefits?|401|medical|dental|vision|insurance|holiday|pto|tuition|"
+    r"equal opportunity|disability|veteran|protected characteristic|privacy|reasonable accommodation|"
+    r"founded|nasdaq|cnbc|xprize|bessemer|silicon valley|company matching|apply|application status|"
+    r"over \d+ applicants?|promoted|viewed|submitted|health care plan|life insurance)\b",
+    re.IGNORECASE,
+)
+
+GENERIC_LEADING_VERBS = re.compile(
+    r"^(?:design|develop|deploy|own|train|evaluate|collaborate|utilize|use|manage|lead|support|"
+    r"assist|create|build|drive|execute|perform|conduct|maintain|monitor|partner)\s+",
+    re.IGNORECASE,
+)
+
+PROOF_WORTHY_CATEGORIES = {"tools_platforms", "methods_frameworks", "domain_context", "seniority_signals"}
 
 
 def normalize_signal_text(value: str) -> str:
-    value = re.sub(r"^[•*\-\d.\s]+", "", str(value or "")).strip()
+    value = re.sub(r"^(?:[•*\-]\s*|\d+[.)]\s*)+", "", str(value or "")).strip()
     value = re.sub(r"\s+", " ", value)
     value = re.sub(r"^(knowledge of|experience with|hands[- ]on experience with|proficiency in|understanding of)\s+", "", value, flags=re.IGNORECASE)
     return value.strip(" .,:;()[]")
 
 
-def is_valid_signal(term: str) -> bool:
+def is_valid_signal(term: str, category: str = "") -> bool:
     normalized = normalize_signal_text(term)
     lowered = normalized.lower()
     if not normalized or lowered in GENERIC_SIGNAL_STOPWORDS:
         return False
-    if re.search(r"\b(?:salary|benefits?|401|medical|dental|vision|insurance|holiday|pto|tuition|equal opportunity|disability|veteran)\b", lowered):
+    if BOILERPLATE_SIGNAL_PATTERN.search(lowered):
         return False
-    if re.search(r"\b(?:founded|nasdaq|cnbc|xprize|bessemer|silicon valley|company matching)\b", lowered):
+    if GENERIC_LEADING_VERBS.match(normalized) and len(normalized.split()) <= 2:
         return False
     if len(normalized) < 3 or len(normalized.split()) > 7:
         return False
     if len(normalized.split()) == 1 and normalized.lower() not in {
-        "python", "sql", "pytorch", "tensorflow", "qdrant", "gcp", "rlhf", "llm", "vlm", "dllm", "vla",
+        "python", "sql", "excel", "tableau", "salesforce", "hubspot", "workday", "sap", "oracle",
+        "jira", "figma", "pytorch", "tensorflow", "qdrant", "gcp", "rlhf", "llm", "vlm", "dllm", "vla",
+        "hipaa", "scrum", "agile", "aws", "azure", "snowflake", "databricks", "redcap", "ga4",
+        "qualtrics", "spss", "sas", "r", "matlab", "netsuite", "quickbooks", "airflow", "dbt",
+        "docker", "kubernetes", "git", "gaap", "seo",
     }:
+        return False
+    if category == "stakeholder_scope" and len(normalized.split()) == 1:
         return False
     return True
 
 
-def make_signal(term: str, category: str, source: str = "parser") -> dict:
+def is_ignored_context_signal(term: str, category: str, sections: dict) -> bool:
+    normalized = normalize_signal_text(term).lower()
+    if not normalized:
+        return True
+    if re.search(r"\b(?:inc|llc|corp|corporation|global|company)\b|\.ai\b", normalized, re.IGNORECASE):
+        return True
+    ignored_text = " ".join(sections.get(key, "") for key in ["about_company", "benefits_compensation"]).lower()
+    high_signal_text = high_signal_jd_text(sections).lower()
+    if ignored_text and normalized in ignored_text and normalized not in high_signal_text:
+        return True
+    return False
+
+
+def is_proof_worthy_signal(term: str, category: str, importance: str = "important", proof_question=True, evidence_type: str = "") -> bool:
+    if proof_question is False:
+        return False
+    if not is_valid_signal(term, category):
+        return False
+    normalized = normalize_signal_text(term)
+    if category in {"tools_platforms", "methods_frameworks"}:
+        return True
+    if category == "domain_context":
+        return len(normalized.split()) >= 2 or normalized.lower() in {"hipaa", "fast"}
+    if category == "seniority_signals":
+        return importance in {"critical", "important"} and len(normalized.split()) >= 2
+    if category == "functional_work":
+        return evidence_type in {"responsibility", "workflow", "method", "regulated_workflow"} and len(normalized.split()) >= 2
+    return False
+
+
+def make_signal(term: str, category: str, source: str = "parser", importance: str = "important", proof_question=True, evidence_type: str = "") -> dict:
     normalized = normalize_signal_text(term)
     canonical = {
         "gcp": "Google Cloud Platform",
@@ -458,6 +582,9 @@ def make_signal(term: str, category: str, source: str = "parser") -> dict:
         "category": category,
         "label": SIGNAL_LABELS.get(category, category.replace("_", " ").title()),
         "source": source,
+        "importance": importance if importance in {"critical", "important", "context"} else "important",
+        "proof_question": is_proof_worthy_signal(canonical, category, importance, proof_question, evidence_type),
+        "evidence_type": evidence_type or category,
     }
 
 
@@ -470,9 +597,14 @@ def normalize_llm_signal_payload(payload: dict, sections: dict, source: str) -> 
             continue
         for value in values[:18]:
             term = value.get("term", "") if isinstance(value, dict) else str(value)
-            if not is_valid_signal(term):
+            importance = value.get("importance", "important") if isinstance(value, dict) else "important"
+            proof_question = value.get("proof_question", True) if isinstance(value, dict) else True
+            evidence_type = value.get("evidence_type", "") if isinstance(value, dict) else ""
+            if not is_valid_signal(term, category):
                 continue
-            signal = make_signal(term, category, source)
+            if is_ignored_context_signal(term, category, sections):
+                continue
+            signal = make_signal(term, category, source, importance, proof_question, evidence_type)
             key = signal["term"].lower()
             if key in seen:
                 continue
@@ -499,7 +631,7 @@ def deterministic_jd_intelligence(jd_text: str) -> dict:
     for category, items in JD_SIGNAL_CATALOG.items():
         for term, patterns in items:
             if any(re.search(pattern, signal_text, re.IGNORECASE | re.DOTALL) for pattern in patterns):
-                signal = make_signal(term, category, "deterministic")
+                signal = make_signal(term, category, "deterministic", "important", category in PROOF_WORTHY_CATEGORIES, category)
                 key = signal["term"].lower()
                 if key in seen:
                     continue
@@ -531,15 +663,17 @@ Extract only hiring-relevant resume signals from the HIGH-SIGNAL JD text.
 Ignore company description, awards, dates, compensation, benefits, equal opportunity, privacy text, and generic verbs.
 
 Return strict JSON with exactly these array keys:
-technical_tools, functional_work, ml_methods, domain_signals, collaboration_signals, seniority_signals
+tools_platforms, functional_work, methods_frameworks, domain_context, stakeholder_scope, seniority_signals
 
 Rules:
-- Each array item must be a concise keyword or phrase, 1-6 words.
-- Include tools, platforms, services, frameworks, methods, responsibilities, domain concepts, and seniority signals.
+- Each array item must be an object: {{"term":"Salesforce","category":"tools_platforms","importance":"critical","proof_question":true,"evidence_type":"tool"}}.
+- Include tools, platforms, software, systems, frameworks, methods, regulated workflows, responsibilities, domain concepts, stakeholder scope, and seniority signals.
 - Do not output company names, product marketing, awards, cities, dates, salaries, benefits, or one-word generic verbs.
 - Do not output weak generic terms like "Knowledge", "Current", "Next", "Own", "Train", "Collaborate", or "ML".
 - Prefer exact JD terminology when it is meaningful, for example "Qdrant", "FAST metadata", "channel ranking", "guide personalization".
-- If a term needs proof before adding to a resume, still include it. The app will ask the user for proof.
+- Set proof_question true only for concrete tools, platforms, methods, regulated workflows, domain systems, or responsibilities a recruiter may ask the candidate to prove.
+- Set importance to critical, important, or context.
+- evidence_type must be one of: tool, platform, method, workflow, regulated_workflow, responsibility, domain, stakeholder, seniority.
 
 HIGH-SIGNAL JD TEXT:
 {signal_text[:9000]}
@@ -618,15 +752,13 @@ def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof:
     supported_missing = []
     needs_user_proof = []
     not_recommended = []
-    high_risk_categories = {"domain_signals", "ml_methods", "seniority_signals", "technical_tools"}
 
     for signal in terms:
-        category = signal.get("category", "") if isinstance(signal, dict) else ""
         if contains_term(generated_text, signal):
             covered.append(signal)
         elif contains_term(evidence_text, signal):
             supported_missing.append(signal)
-        elif category in high_risk_categories:
+        elif isinstance(signal, dict) and signal.get("proof_question") is True:
             needs_user_proof.append(signal)
         else:
             not_recommended.append(signal)
@@ -750,8 +882,7 @@ def ensure_item_intelligence(item: dict, api_key: str | None = None) -> dict:
     existing = item.get("jd_intelligence")
     if existing and existing.get("parser_version") == JD_INTELLIGENCE_VERSION:
         return existing
-    if not existing:
-        item["jd_intelligence"] = extract_jd_intelligence(item.get("jd", ""), api_key=api_key)
+    item["jd_intelligence"] = extract_jd_intelligence(item.get("jd", ""), api_key=api_key, force_refresh=True)
     return item["jd_intelligence"]
 
 
@@ -975,7 +1106,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             return
         if not item.get("versions") or not item.get("active_version_id"):
             item = update_history_item(run_id, normalize_resume_item) or item
-        if not item.get("jd_intelligence"):
+        jd_intelligence = item.get("jd_intelligence") or {}
+        if jd_intelligence.get("parser_version") != JD_INTELLIGENCE_VERSION:
             item = update_history_item(run_id, lambda current: self.rescore_resume_item(current)) or item
         json_response(self, HTTPStatus.OK, playground_payload(item))
 
