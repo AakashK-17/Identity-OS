@@ -990,7 +990,7 @@ def replace_existing_resume_sections(doc: Document, data: dict) -> None:
             doc,
             dc_heading + 1,
             genpact_heading,
-            data.get("experience_dc", []),
+            data.get("destination_cleveland_bullets", []),
         )
 
     genpact_heading = paragraph_index(doc, "Genpact")
@@ -1000,18 +1000,30 @@ def replace_existing_resume_sections(doc: Document, data: dict) -> None:
             doc,
             genpact_heading + 1,
             projects_heading,
-            data.get("experience_genpact", []),
+            data.get("genpact_bullets", []),
         )
+
+    projects_heading = paragraph_index(doc, "PROJECTS", exact=True)
+    skills_heading = paragraph_index(doc, "CORE COMPETENCIES", start=max(projects_heading, 0), exact=True)
+    if projects_heading >= 0 and skills_heading > projects_heading:
+        project_lines = []
+        for project in data.get("projects", []):
+            if isinstance(project, dict):
+                details = " ".join(str(item).strip() for item in project.get("bullets", []) if str(item).strip())
+                project_lines.append(f"{project.get('title', '').strip()}: {details}".strip(": "))
+            elif str(project).strip():
+                project_lines.append(str(project).strip())
+        replace_range_after_anchor(doc, projects_heading, skills_heading, project_lines)
 
     skills_heading = paragraph_index(doc, "CORE COMPETENCIES", exact=True)
     education_heading = paragraph_index(doc, "EDUCATION", start=max(skills_heading, 0), exact=True)
     if skills_heading >= 0 and education_heading > skills_heading:
-        skills = data.get("skills", [])
-        if isinstance(skills, list):
-            skills_text = ", ".join(str(skill).strip() for skill in skills if str(skill).strip())
+        competencies = data.get("core_competencies", [])
+        if isinstance(competencies, list):
+            competency_lines = [str(item).strip() for item in competencies if str(item).strip()]
         else:
-            skills_text = str(skills).strip()
-        replace_range_after_anchor(doc, skills_heading, education_heading, [skills_text])
+            competency_lines = [str(competencies).strip()]
+        replace_range_after_anchor(doc, skills_heading, education_heading, competency_lines)
 
 
 # ---------------- LLM ---------------- #
@@ -1391,12 +1403,8 @@ def generate_resume_from_jd(
 
     missing = replace_placeholders(doc, data)
     if missing:
-        raise ValueError(
-            "Template placeholders missing: "
-            + ", ".join(missing)
-            + ". Add these exact placeholders to the base DOCX: "
-            + ", ".join(PLACEHOLDERS.keys())
-        )
+        replace_existing_resume_sections(doc, data)
+        missing = []
 
     candidate_name = safe_filename((details or {}).get("name", ""), "Resume", max_len=60)
     docx_path = output_dir / f"{candidate_name}_{role}.docx"

@@ -233,6 +233,17 @@ def profile_has_content(profile: dict | None) -> bool:
     return any(bool(profile.get(key)) for key in ["details", "experience", "projects", "education", "certifications", "skills"])
 
 
+def playground_payload(item: dict) -> dict:
+    version = active_version(item)
+    run_id = item.get("id", "")
+    payload = dict(item)
+    payload["active_version"] = version
+    payload["docx_url"] = f"/api/download/{run_id}/docx"
+    payload["pdf_url"] = f"/api/download/{run_id}/pdf" if version.get("pdf_path") else None
+    payload["preview_url"] = f"/api/preview/{run_id}/pdf" if version.get("pdf_path") else None
+    return payload
+
+
 def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
     text = json.dumps(profile or {}, ensure_ascii=False)
     for item in proof or []:
@@ -735,9 +746,12 @@ def intelligence_summary(jd_intelligence: dict, supported_missing: list, proven_
     return "\n".join(lines)
 
 
-def ensure_item_intelligence(item: dict) -> dict:
-    if not item.get("jd_intelligence"):
-        item["jd_intelligence"] = extract_jd_intelligence(item.get("jd", ""))
+def ensure_item_intelligence(item: dict, api_key: str | None = None) -> dict:
+    existing = item.get("jd_intelligence")
+    if existing and existing.get("parser_version") == JD_INTELLIGENCE_VERSION:
+        return existing
+    if not existing:
+        item["jd_intelligence"] = extract_jd_intelligence(item.get("jd", ""), api_key=api_key)
     return item["jd_intelligence"]
 
 
@@ -963,13 +977,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             item = update_history_item(run_id, normalize_resume_item) or item
         if not item.get("jd_intelligence"):
             item = update_history_item(run_id, lambda current: self.rescore_resume_item(current)) or item
-        version = active_version(item)
-        payload = dict(item)
-        payload["active_version"] = version
-        payload["docx_url"] = f"/api/download/{run_id}/docx"
-        payload["pdf_url"] = f"/api/download/{run_id}/pdf" if version.get("pdf_path") else None
-        payload["preview_url"] = f"/api/preview/{run_id}/pdf" if version.get("pdf_path") else None
-        json_response(self, HTTPStatus.OK, payload)
+        json_response(self, HTTPStatus.OK, playground_payload(item))
 
     def handle_resume_action(self, path: str) -> None:
         parts = path.strip("/").split("/")
@@ -983,28 +991,28 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             if not item:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            json_response(self, HTTPStatus.OK, item)
+            json_response(self, HTTPStatus.OK, playground_payload(item))
             return
         if action == "score":
             item = update_history_item(run_id, self.rescore_resume_item)
             if not item:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            json_response(self, HTTPStatus.OK, item)
+            json_response(self, HTTPStatus.OK, playground_payload(item))
             return
         if action == "activate":
             item = update_history_item(run_id, lambda current: self.activate_resume_version(current, body))
             if not item:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            json_response(self, HTTPStatus.OK, item)
+            json_response(self, HTTPStatus.OK, playground_payload(item))
             return
         if action == "regenerate":
             item = self.regenerate_resume_item(run_id, body)
             if not item:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            json_response(self, HTTPStatus.OK, item)
+            json_response(self, HTTPStatus.OK, playground_payload(item))
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
