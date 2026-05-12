@@ -204,6 +204,35 @@ def active_version(item: dict) -> dict:
     }
 
 
+def normalize_resume_item(item: dict) -> dict:
+    versions = item.get("versions")
+    if not isinstance(versions, list) or not versions:
+        version = {
+            "id": "v1",
+            "created_at": item.get("created_at") or datetime.now().isoformat(timespec="seconds"),
+            "label": "Imported original",
+            "instruction": "",
+            "docx_path": item.get("docx_path"),
+            "pdf_path": item.get("pdf_path"),
+            "structured_resume": item.get("structured_resume") or {},
+            "analysis": item.get("analysis") or {},
+            "keyword_gaps": item.get("keyword_gaps") or {},
+        }
+        item["versions"] = [version]
+        item["active_version_id"] = "v1"
+    else:
+        item.setdefault("active_version_id", active_version(item).get("id", "v1"))
+    item.setdefault("user_proof", [])
+    item.setdefault("playground_notes", [])
+    return item
+
+
+def profile_has_content(profile: dict | None) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    return any(bool(profile.get(key)) for key in ["details", "experience", "projects", "education", "certifications", "skills"])
+
+
 def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
     text = json.dumps(profile or {}, ensure_ascii=False)
     for item in proof or []:
@@ -750,7 +779,10 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/config":
-            json_response(self, HTTPStatus.OK, {"google_client_id": os.environ.get("GOOGLE_CLIENT_ID", "")})
+            json_response(self, HTTPStatus.OK, {
+                "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
+                "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
+            })
             return
 
         if parsed.path == "/api/profile":
@@ -927,6 +959,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         if not item:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
+        if not item.get("versions") or not item.get("active_version_id"):
+            item = update_history_item(run_id, normalize_resume_item) or item
         if not item.get("jd_intelligence"):
             item = update_history_item(run_id, lambda current: self.rescore_resume_item(current)) or item
         version = active_version(item)
@@ -975,6 +1009,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def save_resume_proof(self, item: dict, body: dict) -> dict:
+        item = normalize_resume_item(item)
         proof = body.get("proof", [])
         if not isinstance(proof, list):
             proof = []
@@ -990,6 +1025,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         return item
 
     def activate_resume_version(self, item: dict, body: dict) -> dict:
+        item = normalize_resume_item(item)
         version_id = str(body.get("version_id", "")).strip()
         versions = item.get("versions", [])
         version = next((candidate for candidate in versions if candidate.get("id") == version_id), None)
@@ -1004,6 +1040,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         return item
 
     def rescore_resume_item(self, item: dict) -> dict:
+        item = normalize_resume_item(item)
         jd_intelligence = ensure_item_intelligence(item)
         version = active_version(item)
         proof = item.get("user_proof", [])
@@ -1019,6 +1056,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         item = find_history_item(run_id)
         if not item:
             return None
+        item = normalize_resume_item(item)
         api_key = str(body.get("api_key", "")).strip() or None
         active_api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not active_api_key:
@@ -1062,9 +1100,19 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         if instruction:
             augmented_jd += "\n\nPLAYGROUND REGENERATION REQUEST:\n" + instruction
 
-        profile = merge_profile_with_proof(item.get("profile", {}), item.get("user_proof", []))
-        template_path = create_template_from_profile(profile, run_dir / f"{version_id}_template.docx")
-        details = profile.get("details", {})
+        source_profile = item.get("profile", {}) if isinstance(item.get("profile"), dict) else {}
+        profile = merge_profile_with_proof(source_profile, item.get("user_proof", []))
+        details = profile.get("details", {}) if isinstance(profile, dict) else {}
+        if profile_has_content(profile):
+            template_path = create_template_from_profile(profile, run_dir / f"{version_id}_template.docx")
+        else:
+            source_docx = previous.get("docx_path") or item.get("docx_path")
+            if not source_docx or not Path(source_docx).exists():
+                raise RegenerationError("Old resume source missing. Generate a fresh resume first.")
+            try:
+                template_path = make_template_from_resume(Path(source_docx), run_dir / f"{version_id}_template.docx")
+            except Exception as exc:
+                raise RegenerationError(f"Could not prepare the old resume for regeneration: {exc}") from exc
         try:
             result = generate_resume_from_jd(
                 augmented_jd,
@@ -1093,6 +1141,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         }
 
         def apply_update(current: dict) -> dict:
+            current = normalize_resume_item(current)
             current.setdefault("versions", []).append(version)
             current["active_version_id"] = version_id
             current["docx_path"] = result["docx_path"]

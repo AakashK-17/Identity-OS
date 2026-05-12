@@ -65,6 +65,7 @@ const state = {
   user: JSON.parse(localStorage.getItem("identity-os-user") || "null"),
   history: [],
   googleClientId: "",
+  openaiConfigured: false,
   googleLoaded: false,
   profile: null,
   identityScenesStarted: false,
@@ -536,7 +537,7 @@ function renderPlayground(item) {
   renderKeywordGaps(version.keyword_gaps || item.keyword_gaps || {});
   renderProofQuestions(item, version.keyword_gaps || item.keyword_gaps || {});
   renderPlaygroundNotes(item);
-  setRegenStatus("", "Ready to create a new version.");
+  setRegenStatus("", state.openaiConfigured ? "Ready to create a new version." : "Server OpenAI key is not configured. Add a key in the form or server environment.");
 }
 
 function renderDownloads(item) {
@@ -759,7 +760,12 @@ async function regenerateActiveResume() {
     setRegenStatus("success", successMessage);
     setStatus("Version Ready", "Your regenerated resume is now active in the playground.");
   } catch (error) {
-    const message = error.message || "Regeneration failed.";
+    let message = error.message || "Regeneration failed.";
+    if (message.toLowerCase().includes("openai key")) {
+      message = "OpenAI key missing. Add OPENAI_API_KEY on the server or enter a key in the form.";
+    } else if (message.toLowerCase().includes("old resume source missing")) {
+      message = "Old resume source missing. Generate a fresh resume first.";
+    }
     setInlineStatus("error", message);
     setRegenStatus("error", message);
     setStatus("Needs Attention", message);
@@ -1060,6 +1066,7 @@ fetch("/api/config")
       state.googleClientId = config.google_client_id;
       if (googleClientIdInput) googleClientIdInput.value = state.googleClientId;
     }
+    state.openaiConfigured = Boolean(config.openai_configured);
   })
   .then(() => {
     if (!signinModal.classList.contains("hidden")) {
