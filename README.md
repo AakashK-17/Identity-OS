@@ -1,139 +1,161 @@
-# Local AI Resume Generator
+# Identity OS
 
-This folder contains a runnable resume tailoring script for your current paths.
+Identity OS is an AI resume workspace for job seekers. Users sign in, build a structured base profile once, paste job descriptions, generate tailored resumes, preview the final PDF, score the result, and keep every company, role, JD, DOCX, PDF, and version in searchable history.
 
-## One-Time Setup
+The product is designed as a job-search memory system, not a one-off resume generator.
+
+## What It Does
+
+- **Google sign-in** keeps each user's profile, resumes, and history separated by account.
+- **Structured base profile** collects contact details, experience, projects, skills, education, certifications, and other resume foundation data.
+- **JD intelligence** parses job descriptions into hiring-relevant signals instead of noisy keyword fragments.
+- **Resume generation** creates tailored DOCX and PDF files from the user's profile and target JD.
+- **PDF preview** shows the generated resume directly inside the app.
+- **Resume scoring** evaluates ATS alignment, proof strength, readability, role fit, format quality, and interview defensibility.
+- **Proof-first keyword gaps** ask the user for evidence before adding unsupported tools, methods, responsibilities, or domain claims.
+- **Resume Playground** lets users regenerate a resume version with proof, safe JD additions, or chat-style refinement.
+- **Version history** preserves older resume versions instead of overwriting them.
+- **Searchable job history** stores company, role, JD, timestamp, DOCX, PDF, analysis, and playground notes.
+
+## Current Product Flow
+
+1. User lands on the public homepage.
+2. User signs in with Google.
+3. User enters their base resume details in the workspace.
+4. User pastes a job description.
+5. Identity OS extracts company, role, JD signals, risks, and proof-worthy requirements.
+6. The backend generates a tailored resume as DOCX and PDF.
+7. The app opens the Resume Playground for that run.
+8. User previews the PDF, reviews scores, fills proof gaps, and regenerates new versions when needed.
+9. Every run is saved automatically into history.
+
+## Tech Stack
+
+- **Frontend:** HTML, CSS, JavaScript
+- **Backend:** Python HTTP server
+- **AI:** OpenAI API
+- **Documents:** `python-docx`
+- **PDF export:** LibreOffice headless mode
+- **Auth:** Google Identity Services
+- **Storage:** JSON files and generated assets on local disk or Render persistent disk
+- **Deployment:** Docker + Render Blueprint
+
+## Repository Structure
+
+```text
+web/
+  index.html              Landing page and workspace shell
+  styles.css              Full UI styling and responsive layout
+  app.js                  Frontend state, auth, history, playground, generation
+  identity-engine.js      Landing page interaction layer
+
+app_backend.py            Main web server and API
+generate_resume.py        Legacy/local CLI resume generator
+prepare_resume_template.py Legacy DOCX placeholder helper
+requirements.txt          Python dependencies
+Dockerfile                Production image with LibreOffice
+render.yaml               Render Blueprint configuration
+.env.example              Local environment template
+```
+
+## Backend API
+
+Key routes:
+
+```text
+GET  /api/config
+POST /api/signin
+GET  /api/profile
+POST /api/profile
+GET  /api/history
+POST /api/generate
+GET  /api/resume/{run_id}
+GET  /api/preview/{run_id}/pdf
+GET  /api/download/{run_id}/docx
+GET  /api/download/{run_id}/pdf
+POST /api/resume/{run_id}/proof
+POST /api/resume/{run_id}/regenerate
+POST /api/resume/{run_id}/score
+POST /api/resume/{run_id}/activate
+```
+
+## Environment Variables
+
+Create a local `.env` file from `.env.example`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Set:
+
+```text
+OPENAI_API_KEY=your_openai_api_key_here
+GOOGLE_CLIENT_ID=your_google_oauth_web_client_id_here
+HOST=127.0.0.1
+PORT=8787
+OUTPUT_ROOT=./data/generated
+```
+
+Do not commit `.env`. It contains secrets.
+
+## Local Setup
 
 Install Python dependencies:
 
 ```powershell
-pip install python-docx openai
+pip install -r requirements.txt
 ```
 
 Install LibreOffice for PDF export:
 
+```text
 https://www.libreoffice.org/download/download-libreoffice/
+```
 
-Set your OpenAI API key in PowerShell:
+Run the app:
 
 ```powershell
-$env:OPENAI_API_KEY="your_api_key_here"
+python app_backend.py
 ```
 
-For a permanent Windows user environment variable:
-
-```powershell
-setx OPENAI_API_KEY "your_api_key_here"
-```
-
-Restart PowerShell after using `setx`.
-
-## Base Resume Template
-
-The generator uses this strict template file:
+Open:
 
 ```text
-D:\Resume's and coverletter\University of Utah Health Research\Aakash Kunarapu_Data Scientist_Template.docx
+http://127.0.0.1:8787
 ```
 
-Create/update it from your current base resume by running:
+## Google Login Setup
 
-```powershell
-python prepare_resume_template.py
-```
+In Google Cloud Console:
 
-It copies from:
+1. Go to **Google Auth Platform**.
+2. Configure the OAuth consent screen.
+3. Create an **OAuth Client ID**.
+4. Choose **Web application**.
+5. Add local and production origins:
 
 ```text
-D:\Resume's and coverletter\University of Utah Health Research\Aakash Kunarapu_Data Scientist.docx
+http://127.0.0.1:8787
+https://identity-os-resume.onrender.com
 ```
 
-The template must contain these placeholders exactly where the generated content should go:
+6. Copy the Web Client ID into:
 
 ```text
-{{SUMMARY}}
-{{DESTINATION_CLEVELAND}}
-{{GENPACT}}
-{{PROJECTS}}
-{{CORE_COMPETENCIES}}
+GOOGLE_CLIENT_ID=...
 ```
 
-The generator now requires every placeholder above. It rewrites the full resume body from
-Professional Summary through Core Competencies instead of partially editing the original text.
+For Render, add it as a service environment variable.
 
-Recommended template layout:
+## Deploy To Render
 
-```text
-PROFESSIONAL SUMMARY
-{{SUMMARY}}
+This project is ready for Render Blueprint deployment.
 
-EXPERIENCE
-Destination Cleveland – Research Analyst. Aug 2025 – Dec 2025
-Cleveland, OH
-{{DESTINATION_CLEVELAND}}
-
-Genpact – Data Scientist. Feb 2021 – Jul 2023
-Hyderabad, India
-{{GENPACT}}
-
-PROJECTS
-{{PROJECTS}}
-
-CORE COMPETENCIES
-{{CORE_COMPETENCIES}}
-```
-
-## Generate A Resume
-
-Paste a full job description into:
-
-```text
-job_description.txt
-```
-
-Run:
-
-```powershell
-python generate_resume.py
-```
-
-The output goes to:
-
-```text
-D:\Resume's and coverletter\<Company_Name>\
-```
-
-The script saves both:
-
-```text
-Aakash Kunarapu_<Role>.docx
-Aakash Kunarapu_<Role>.pdf
-```
-
-## Useful Options
-
-Generate DOCX only:
-
-```powershell
-python generate_resume.py --skip-pdf
-```
-
-Use a different JD file:
-
-```powershell
-python generate_resume.py --jd "D:\path\to\jd.txt"
-```
-
-## Deploy The Website
-
-This app is deployment-ready with Docker because production PDF export needs LibreOffice.
-
-Recommended host: Render Web Service.
-
-1. Push this folder to a GitHub repository.
-2. In Render, create a new Blueprint from the repository.
-3. Render will read `render.yaml` and build the Docker image.
-4. Add these environment variables in Render:
+1. Push the repo to GitHub.
+2. In Render, create a new **Blueprint** from the repo.
+3. Render reads `render.yaml`.
+4. Add these environment variables:
 
 ```text
 OPENAI_API_KEY=your OpenAI API key
@@ -143,22 +165,106 @@ PORT=8787
 OUTPUT_ROOT=/app/data/generated
 ```
 
-5. In Google Cloud Console, create an OAuth Web Client ID.
-6. Add your deployed Render URL to Authorized JavaScript origins:
+5. Confirm the persistent disk is mounted at:
 
 ```text
-https://your-render-app.onrender.com
+/app/data
 ```
 
-7. Paste that client ID into `GOOGLE_CLIENT_ID` on Render and redeploy.
+6. Redeploy.
 
-Local Docker test:
+Production URL currently used:
+
+```text
+https://identity-os-resume.onrender.com
+```
+
+## Local Docker Test
 
 ```powershell
 docker build -t identity-os-resume .
-docker run --rm -p 8787:8787 --env-file .env.example identity-os-resume
+docker run --rm -p 8787:8787 --env-file .env identity-os-resume
 ```
 
-Production note: Render uses the configured persistent disk at `/app/data` for saved profiles,
-history, and generated resume files. For a larger product, move this data to Postgres/Supabase
-so it scales safely across multiple app instances.
+## JD Intelligence And Proof Gaps
+
+Identity OS extracts hiring signals from high-signal JD sections only:
+
+- Role overview
+- Responsibilities
+- Qualifications
+- Requirements
+- Preferred skills
+
+It ignores:
+
+- Company history
+- Awards
+- Benefits
+- Compensation
+- Legal and equal opportunity text
+- Dates
+- Locations
+- Generic verbs
+
+Signals are grouped into:
+
+- `tools_platforms`
+- `functional_work`
+- `methods_frameworks`
+- `domain_context`
+- `stakeholder_scope`
+- `seniority_signals`
+
+Only concrete proof-worthy signals become proof questions. The app should ask about things like `PyTorch`, `Qdrant`, `Salesforce`, `IRB protocols`, `GAAP`, or `Google Analytics`, not noisy fragments like `Knowledge`, `Current`, `Benefits`, `NASDAQ`, or company names.
+
+## Resume Playground
+
+Each generated resume gets a unique playground with:
+
+- Overall score and category scores
+- Covered JD signals
+- Safe-to-add signals
+- Signals needing user proof
+- Not-recommended unsupported claims
+- PDF preview
+- DOCX and PDF downloads
+- Version selector
+- Regeneration status
+- Chat-style refinement box
+- Version history notes
+
+Regeneration creates a new version and keeps the previous one available.
+
+## Storage Notes
+
+Current v1 storage is file-based:
+
+```text
+data/
+  history.json
+  profiles.json
+  jd_cache.json
+runs/
+uploads/
+OUTPUT_ROOT/
+```
+
+On Render, generated files and JSON history should live on the persistent disk. For a larger multi-user product, move this layer to Postgres or Supabase and move documents to object storage.
+
+## Legacy CLI Scripts
+
+The old local script flow still exists for quick experiments:
+
+```powershell
+python generate_resume.py
+```
+
+That script reads `job_description.txt` and uses a DOCX template workflow. The main product experience is now the web app in `app_backend.py` and `web/`.
+
+## Security Notes
+
+- Never commit raw OpenAI keys.
+- Never store user-provided API keys in history.
+- Google profile data is used only to scope profile and history records by account.
+- The current JSON storage is suitable for a single-instance MVP, not a fully scaled production system.
