@@ -29,6 +29,25 @@ RUN_DIR = ROOT / "runs"
 DATA_DIR = ROOT / "data"
 HISTORY_FILE = DATA_DIR / "history.json"
 JD_CACHE_FILE = DATA_DIR / "jd_intelligence_cache.json"
+
+
+def load_local_env() -> None:
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_local_env()
+
 OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", DATA_DIR / "generated")).resolve()
 
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -57,6 +76,14 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+class AppError(Exception):
+    status = HTTPStatus.BAD_REQUEST
+
+
+class RegenerationError(AppError):
+    status = HTTPStatus.BAD_REQUEST
 
 
 def read_json_body(handler: BaseHTTPRequestHandler) -> dict:
@@ -767,8 +794,10 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 self.handle_resume_action(parsed.path)
                 return
             self.send_error(HTTPStatus.NOT_FOUND)
+        except AppError as exc:
+            json_response(self, exc.status, {"error": str(exc), "type": exc.__class__.__name__})
         except Exception as exc:
-            json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
+            json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc), "type": exc.__class__.__name__})
 
     def handle_generate(self) -> dict:
         content_type = self.headers.get("Content-Type", "")
@@ -993,8 +1022,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         api_key = str(body.get("api_key", "")).strip() or None
         active_api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not active_api_key:
-            raise ValueError("Regeneration needs an OpenAI key. Add it in the OpenAI API Key field or configure OPENAI_API_KEY on the server.")
-        jd_intelligence = ensure_item_intelligence(item, api_key=api_key)
+            raise RegenerationError("Regeneration needs an OpenAI key. Configure OPENAI_API_KEY on the server or add it in the OpenAI API Key field.")
+        jd_intelligence = ensure_item_intelligence(item, api_key=active_api_key)
         proof = body.get("proof")
         if isinstance(proof, list):
             item["user_proof"] = proof
@@ -1002,6 +1031,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         current_versions = item.setdefault("versions", [])
         version_id = f"v{len(current_versions) + 1}"
         run_dir = RUN_DIR / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
         proof_text = "\n".join(
             f"- {entry.get('keyword', '')}: {entry.get('proof', '')}"
             for entry in item.get("user_proof", [])
@@ -1035,15 +1065,18 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         profile = merge_profile_with_proof(item.get("profile", {}), item.get("user_proof", []))
         template_path = create_template_from_profile(profile, run_dir / f"{version_id}_template.docx")
         details = profile.get("details", {})
-        result = generate_resume_from_jd(
-            augmented_jd,
-            base_resume_path=template_path,
-            output_root=OUTPUT_ROOT,
-            details=details,
-            skip_pdf=item.get("skip_pdf", False),
-            api_key=api_key,
-        )
-        result = copy_version_files(result, run_dir, version_id)
+        try:
+            result = generate_resume_from_jd(
+                augmented_jd,
+                base_resume_path=template_path,
+                output_root=OUTPUT_ROOT,
+                details=details,
+                skip_pdf=item.get("skip_pdf", False),
+                api_key=active_api_key,
+            )
+            result = copy_version_files(result, run_dir, version_id)
+        except Exception as exc:
+            raise RegenerationError(f"Regeneration failed: {exc}") from exc
         gaps = build_keyword_gaps(item.get("jd", ""), result["structured_resume"], profile, item.get("user_proof", []), jd_intelligence=jd_intelligence)
         analysis = score_resume(item.get("jd", ""), result["structured_resume"], profile, result.get("pdf_path"), item.get("user_proof", []), jd_intelligence=jd_intelligence)
         version = {

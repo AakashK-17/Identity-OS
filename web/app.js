@@ -39,6 +39,7 @@ const proofList = document.querySelector("#proof-list");
 const saveProofButton = document.querySelector("#save-proof");
 const playgroundMessage = document.querySelector("#playground-message");
 const regenerateButton = document.querySelector("#regenerate-resume");
+const regenStatus = document.querySelector("#regen-status");
 const playgroundNotes = document.querySelector("#playground-notes");
 const profileJsonInput = document.querySelector("#profile-json");
 const apiKeyInput = document.querySelector('input[name="api_key"]');
@@ -302,6 +303,13 @@ function setInlineStatus(kind, copy) {
   if (copyNode) copyNode.textContent = copy;
 }
 
+function setRegenStatus(kind, copy) {
+  if (!regenStatus) return;
+  regenStatus.className = `regen-status ${kind || ""}`.trim();
+  const copyNode = regenStatus.querySelector("p");
+  if (copyNode) copyNode.textContent = copy;
+}
+
 function openSignin() {
   signinModal.classList.remove("hidden");
   renderGoogleButton();
@@ -528,6 +536,7 @@ function renderPlayground(item) {
   renderKeywordGaps(version.keyword_gaps || item.keyword_gaps || {});
   renderProofQuestions(item, version.keyword_gaps || item.keyword_gaps || {});
   renderPlaygroundNotes(item);
+  setRegenStatus("", "Ready to create a new version.");
 }
 
 function renderDownloads(item) {
@@ -715,19 +724,23 @@ async function saveProof() {
 async function regenerateActiveResume() {
   if (!state.activeResume?.id) {
     setInlineStatus("error", "Open a resume playground first.");
+    setRegenStatus("error", "Open a resume playground first.");
     return;
   }
   const proof = collectProof();
   const instruction = playgroundMessage?.value.trim() || "";
   const missingProof = proof.some((item) => item.used && !item.proof);
   if (missingProof) {
-    setInlineStatus("error", "Add proof text for checked keywords before regenerating.");
+    const message = "Add proof text for checked keywords before regenerating.";
+    setInlineStatus("error", message);
+    setRegenStatus("error", message);
     return;
   }
   regenerateButton.disabled = true;
   const originalLabel = regenerateButton.textContent;
   regenerateButton.textContent = "Regenerating...";
   setInlineStatus("busy", "Creating a new resume version from proof and chat instructions.");
+  setRegenStatus("busy", "Regenerating version...");
   setStatus("Regenerating", "Creating a new version from your proof, JD signals, and refinement request.");
   try {
     const response = await fetch(`/api/resume/${state.activeResume.id}/regenerate`, {
@@ -740,8 +753,17 @@ async function regenerateActiveResume() {
     await loadHistory();
     renderPlayground({ ...item, active_version: activeVersion(item) });
     if (playgroundMessage) playgroundMessage.value = "";
-    setInlineStatus("success", "New resume version generated.");
+    const active = activeVersion(item);
+    const successMessage = `New resume version ${String(active?.id || "").toUpperCase() || "created"} is active.`;
+    setInlineStatus("success", successMessage);
+    setRegenStatus("success", successMessage);
     setStatus("Version Ready", "Your regenerated resume is now active in the playground.");
+  } catch (error) {
+    const message = error.message || "Regeneration failed.";
+    setInlineStatus("error", message);
+    setRegenStatus("error", message);
+    setStatus("Needs Attention", message);
+    throw error;
   } finally {
     regenerateButton.disabled = false;
     regenerateButton.textContent = originalLabel || "Regenerate Version";

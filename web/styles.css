@@ -1232,6 +1232,46 @@ button:disabled {
   background: #a46464;
 }
 
+.regen-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(30, 30, 28, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.regen-status span {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--steel);
+}
+
+.regen-status p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.regen-status.busy span {
+  background: var(--sand);
+  animation: pulse-dot 1.1s ease-in-out infinite;
+}
+
+.regen-status.success span {
+  background: var(--sage);
+}
+
+.regen-status.error span {
+  background: #a46464;
+}
+
 @keyframes pulse-dot {
   50% {
     transform: scale(1.45);
