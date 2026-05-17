@@ -3,6 +3,7 @@ import hashlib
 import os
 import re
 import shutil
+import time
 import uuid
 from datetime import datetime
 from http import HTTPStatus
@@ -57,6 +58,8 @@ OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESULTS: dict[str, dict] = {}
 JD_INTELLIGENCE_VERSION = 5
+BUILD_COMMIT = os.environ.get("RENDER_GIT_COMMIT", "")
+BUILD_TIMESTAMP = os.environ.get("RENDER_DEPLOYED_AT", "")
 
 
 MIME_TYPES = {
@@ -70,9 +73,14 @@ MIME_TYPES = {
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
+    request_id = getattr(handler, "request_id", "")
+    if request_id and "request_id" not in payload:
+        payload = {**payload, "request_id": request_id}
     body = json.dumps(payload).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
+    if request_id:
+        handler.send_header("X-Request-ID", request_id)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
@@ -1082,8 +1090,25 @@ def save_uploaded_file(field, destination: Path) -> Path | None:
 class ResumeForgeHandler(BaseHTTPRequestHandler):
     server_version = "ResumeForge/1.0"
 
+    def __init__(self, *args, **kwargs):
+        self.request_id = uuid.uuid4().hex[:12]
+        self.request_started_at = time.perf_counter()
+        super().__init__(*args, **kwargs)
+
     def log_message(self, format, *args):
-        print(f"[resume-forge] {self.address_string()} - {format % args}")
+        duration_ms = round((time.perf_counter() - getattr(self, "request_started_at", time.perf_counter())) * 1000)
+        print(f"[resume-forge] request_id={getattr(self, 'request_id', '-')} client={self.address_string()} method={self.command} path={self.path} duration_ms={duration_ms} - {format % args}")
+
+    def send_api_error(self, status: int, error: str, error_type: str) -> None:
+        json_response(self, status, {"error": error, "type": error_type})
+
+    def send_error(self, code, message=None, explain=None):
+        parsed = urlparse(getattr(self, "path", ""))
+        if parsed.path.startswith("/api/"):
+            description = message or HTTPStatus(code).phrase
+            self.send_api_error(code, description, "HttpError")
+            return
+        super().send_error(code, message, explain)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -1110,6 +1135,16 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, {
                 "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
+                "build_commit": BUILD_COMMIT,
+                "build_timestamp": BUILD_TIMESTAMP,
+            })
+            return
+
+        if parsed.path == "/api/version":
+            json_response(self, HTTPStatus.OK, {
+                "build_commit": BUILD_COMMIT,
+                "build_timestamp": BUILD_TIMESTAMP,
+                "jd_intelligence_version": JD_INTELLIGENCE_VERSION,
             })
             return
 
@@ -1153,11 +1188,11 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             if parsed.path.startswith("/api/resume/"):
                 self.handle_resume_action(parsed.path)
                 return
-            self.send_error(HTTPStatus.NOT_FOUND)
+            self.send_api_error(HTTPStatus.NOT_FOUND, "API route not found.", "NotFoundError")
         except AppError as exc:
-            json_response(self, exc.status, {"error": str(exc), "type": exc.__class__.__name__})
+            self.send_api_error(exc.status, str(exc), exc.__class__.__name__)
         except Exception as exc:
-            json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc), "type": exc.__class__.__name__})
+            self.send_api_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc), exc.__class__.__name__)
 
     def handle_generate(self) -> dict:
         content_type = self.headers.get("Content-Type", "")

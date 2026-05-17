@@ -72,6 +72,60 @@ const state = {
   activeResume: null,
 };
 
+class ApiError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.status = details.status || 0;
+    this.type = details.type || "";
+    this.requestId = details.requestId || "";
+  }
+}
+
+function apiErrorMessage(context, status, payload = {}, rawText = "") {
+  const requestSuffix = payload.request_id ? ` Request ID: ${payload.request_id}.` : "";
+  if (payload.error) return `${payload.error}${requestSuffix}`;
+  if (rawText.trim().startsWith("<")) {
+    return `The server returned an unexpected response while ${context}. Please retry.${requestSuffix}`;
+  }
+  if (status) return `The server could not complete ${context}. Please retry.${requestSuffix}`;
+  return `Could not complete ${context}. Please retry.${requestSuffix}`;
+}
+
+async function parseApiResponse(response, context = "processing your request") {
+  const contentType = response.headers.get("content-type") || "";
+  const requestId = response.headers.get("x-request-id") || "";
+  const rawText = await response.text();
+  let payload = {};
+  if (rawText) {
+    try {
+      payload = JSON.parse(rawText);
+    } catch {
+      payload = {};
+    }
+  }
+  if (!response.ok) {
+    throw new ApiError(apiErrorMessage(context, response.status, payload, rawText), {
+      status: response.status,
+      type: payload.type,
+      requestId: payload.request_id || requestId,
+    });
+  }
+  if (!contentType.includes("application/json") || (rawText && !Object.keys(payload).length && rawText.trim() !== "{}")) {
+    throw new ApiError(apiErrorMessage(context, response.status, payload, rawText), {
+      status: response.status,
+      type: "UnexpectedResponse",
+      requestId: payload.request_id || requestId,
+    });
+  }
+  return payload;
+}
+
+async function apiFetch(url, options = {}, context) {
+  const response = await fetch(url, options);
+  return parseApiResponse(response, context);
+}
+
 function initAmbientField() {
   const canvas = document.querySelector("#ambient-canvas");
   if (!canvas) return;
@@ -381,15 +435,11 @@ async function saveGoogleProfile(credentialResponse) {
     avatar: payload.picture || "",
     google_sub: payload.sub,
   };
-  const response = await fetch("/api/signin", {
+  const result = await apiFetch("/api/signin", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(profile),
-  });
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.error || "Sign in failed.");
-  }
+  }, "signing you in");
   applyUser(result.profile);
   state.history = result.items || [];
   renderHistory();
@@ -459,8 +509,7 @@ async function loadHistory() {
     renderHistory();
     return;
   }
-  const response = await fetch(`/api/history?email=${encodeURIComponent(state.user.email)}`);
-  const result = await response.json();
+  const result = await apiFetch(`/api/history?email=${encodeURIComponent(state.user.email)}`, {}, "loading your history");
   state.history = result.items || [];
   renderHistory();
 }
@@ -510,9 +559,7 @@ function renderHistory() {
 async function openPlayground(runId) {
   if (!runId) return;
   setInlineStatus("busy", "Opening the resume playground.");
-  const response = await fetch(`/api/resume/${encodeURIComponent(runId)}`);
-  const item = await response.json();
-  if (!response.ok) throw new Error(item.error || "Could not open playground.");
+  const item = await apiFetch(`/api/resume/${encodeURIComponent(runId)}`, {}, "opening the resume playground");
   renderPlayground(item);
   setInlineStatus("success", "Resume playground is ready.");
   document.querySelector("#history")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -725,13 +772,11 @@ async function regenerateActiveResume() {
   setRegenStatus("busy", "Regenerating version...");
   setStatus("Regenerating", "Creating a new version from the JD keyword plan and refinement request.");
   try {
-    const response = await fetch(`/api/resume/${state.activeResume.id}/regenerate`, {
+    const item = await apiFetch(`/api/resume/${state.activeResume.id}/regenerate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ instruction, api_key: apiKeyInput?.value.trim() || "" }),
-    });
-    const item = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(item.error || "Regeneration failed.");
+    }, "regenerating your resume");
     await loadHistory();
     renderPlayground({ ...item, active_version: activeVersion(item) });
     if (playgroundMessage) playgroundMessage.value = "";
@@ -759,13 +804,11 @@ async function regenerateActiveResume() {
 
 async function activateVersion(versionId) {
   if (!state.activeResume?.id || !versionId) return;
-  const response = await fetch(`/api/resume/${state.activeResume.id}/activate`, {
+  const item = await apiFetch(`/api/resume/${state.activeResume.id}/activate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ version_id: versionId }),
-  });
-  const item = await response.json();
-  if (!response.ok) throw new Error(item.error || "Could not switch version.");
+  }, "switching resume versions");
   renderPlayground({ ...item, active_version: activeVersion(item) });
   await loadHistory();
 }
@@ -918,13 +961,11 @@ async function saveBaseProfile() {
     return;
   }
   const profile = collectProfile();
-  const response = await fetch("/api/profile", {
+  const result = await apiFetch("/api/profile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: state.user.email, profile }),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Could not save base resume.");
+  }, "saving your base resume");
   state.profile = result.profile;
   setInlineStatus("success", "Base resume saved. Future JDs will use this structured profile.");
 }
@@ -934,8 +975,7 @@ async function loadProfile() {
     hydrateProfile({});
     return;
   }
-  const response = await fetch(`/api/profile?email=${encodeURIComponent(state.user.email)}`);
-  const result = await response.json();
+  const result = await apiFetch(`/api/profile?email=${encodeURIComponent(state.user.email)}`, {}, "loading your base resume");
   state.profile = result.profile || {};
   hydrateProfile(state.profile);
 }
@@ -1000,15 +1040,10 @@ form.addEventListener("submit", async (event) => {
     const data = new FormData(form);
     data.set("user_email", state.user.email);
     data.set("profile_json", JSON.stringify(profile));
-    const response = await fetch("/api/generate", {
+    const result = await apiFetch("/api/generate", {
       method: "POST",
       body: data,
-    });
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || "Generation failed.");
-    }
+    }, "generating your resume");
 
     if (jsonOutput) jsonOutput.textContent = `Saved to history: ${result.company} - ${result.role}`;
     setStatus(`${result.company}`, `${result.role} resume generated.`);
@@ -1033,14 +1068,15 @@ if (state.user) {
 resize();
 draw();
 initIdentityEngine();
-fetch("/api/config")
-  .then((response) => response.json())
+apiFetch("/api/config", {}, "loading app configuration")
   .then((config) => {
     if (config.google_client_id) {
       state.googleClientId = config.google_client_id;
       if (googleClientIdInput) googleClientIdInput.value = state.googleClientId;
     }
     state.openaiConfigured = Boolean(config.openai_configured);
+    state.buildCommit = config.build_commit || "";
+    state.buildTimestamp = config.build_timestamp || "";
   })
   .then(() => {
     if (!signinModal.classList.contains("hidden")) {
