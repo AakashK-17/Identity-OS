@@ -1,6 +1,6 @@
-# Identity OS
+# Hone
 
-Identity OS is an AI resume workspace for job seekers. Users sign in, build a structured base profile once, paste job descriptions, generate tailored resumes, preview the final PDF, score the result, and keep every company, role, JD, DOCX, PDF, and version in searchable history.
+Hone is an AI resume workspace for job seekers. Users sign in, build a structured base profile once, paste job descriptions, generate tailored resumes, preview the final PDF, score the result, and keep every company, role, JD, DOCX, PDF, and version in searchable history.
 
 The product is designed as a job-search memory system, not a one-off resume generator.
 
@@ -23,7 +23,7 @@ The product is designed as a job-search memory system, not a one-off resume gene
 2. User signs in with Google.
 3. User enters their base resume details in the workspace.
 4. User pastes a job description.
-5. Identity OS extracts company, role, JD signals, risks, and proof-worthy requirements.
+5. Hone extracts company, role, JD signals, risks, and proof-worthy requirements.
 6. The backend generates a tailored resume as DOCX and PDF.
 7. The app opens the Resume Playground for that run.
 8. User previews the PDF, reviews scores and keyword strategy, then regenerates new versions when needed.
@@ -188,7 +188,7 @@ docker run --rm -p 8787:8787 --env-file .env identity-os-resume
 
 ## JD Intelligence And Keyword Strategy
 
-Identity OS extracts hiring signals from high-signal JD sections only:
+Hone extracts hiring signals from high-signal JD sections only:
 
 - Role overview
 - Responsibilities

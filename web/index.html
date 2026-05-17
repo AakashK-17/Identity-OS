@@ -18,7 +18,7 @@
     </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Identity OS</title>
+    <title>Hone</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -34,8 +34,9 @@
     <div id="ld-shell" aria-hidden="true">
       <canvas id="ld-canvas"></canvas>
       <div id="ld-meta">
-        <div class="lbl">Identity OS</div>
-        <div class="ttl">building your intelligence layer</div>
+        <span class="hone-mark loader-mark"></span>
+        <div class="lbl">Hone</div>
+        <div class="ttl">sharpening your edge</div>
         <div id="ld-bar"></div>
       </div>
     </div>
@@ -45,9 +46,9 @@
     <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
 
     <header class="topbar">
-      <a class="brand" href="#home" aria-label="Identity OS home">
-        <span class="brand-mark"></span>
-        <span>Identity OS</span>
+      <a class="brand" href="#home" aria-label="Hone home">
+        <span class="hone-mark brand-mark"></span>
+        <span>Hone<span class="spark-dot">.</span></span>
       </a>
       <nav class="public-nav">
         <a href="#how">How it works</a>
@@ -70,10 +71,10 @@
     <main>
       <section class="landing public-only" id="home">
         <div class="landing-copy layer-card">
-          <p class="eyebrow">Professional Identity Engineering</p>
-          <h1>Your resume, <span>rewritten</span> for every role.</h1>
+          <p class="eyebrow">Resume tailoring and job-search memory</p>
+          <h1>Sharpen the way you <span>show up</span> at work.</h1>
           <p class="lede">
-            A calm intelligence workspace that rewrites your resume for each job description, stores every version, and keeps the JD, company, and role in one searchable timeline.
+            Hone tailors every resume to the role, keeps each version filed, and gives your job search a memory you can actually use.
           </p>
           <div class="hero-actions">
             <button class="btn-primary" type="button" id="hero-signin">Get started - it is free</button>
@@ -85,23 +86,13 @@
             <span><b>ATS</b> aligned</span>
           </div>
         </div>
-        <div class="orb-stage" aria-hidden="true">
+        <div class="edge-stage" aria-hidden="true">
           <canvas id="hero-canvas"></canvas>
-          <svg class="connect-svg" viewBox="0 0 500 500" preserveAspectRatio="none">
-            <g stroke="rgba(80,75,55,.18)" stroke-width=".8" fill="none">
-              <path d="M50,120 Q200,60 380,180" />
-              <path d="M30,300 Q180,260 420,340" />
-              <path d="M100,400 Q260,380 460,260" />
-              <path d="M250,40 Q300,200 200,460" />
-            </g>
-          </svg>
-          <div class="orb">
-            <div class="orb-core"></div>
-          </div>
-          <div class="chip chip-1"><span></span>JD parsed</div>
-          <div class="chip chip-2"><span></span>ATS signal</div>
+          <span class="hone-mark hero-mark"></span>
+          <div class="chip chip-1"><span></span>JD read</div>
+          <div class="chip chip-2"><span></span>Bullets sharpened</div>
           <div class="chip chip-3"><span></span>Resume v.07</div>
-          <div class="chip chip-4"><span></span>Hiring fit 92</div>
+          <div class="chip chip-4"><span></span>Fit 92</div>
         </div>
       </section>
 
@@ -111,7 +102,7 @@
             <p class="sec-label">/ how it works</p>
             <h2>Four moves from JD to interview-ready PDF.</h2>
           </div>
-          <p>Build your foundation once. Paste a job description. Identity OS analyses the role, rewrites your resume to match, and saves the full application artifact into your history.</p>
+          <p>Build your foundation once. Paste a job description. Hone reads the role, sharpens the resume, and files the full application artifact into your history.</p>
         </div>
         <div class="steps">
           <article class="step">
@@ -139,7 +130,7 @@
             <p class="sec-label">/ the system</p>
             <h2>One workspace <span class="serif-word">for</span> a real job search.</h2>
           </div>
-          <p>Not a one-shot generator. Identity OS treats your search as infrastructure: a structured profile, a tailoring engine, and a permanent record of every application.</p>
+          <p>Not a one-shot generator. Hone keeps a structured profile, a tailoring workflow, and a permanent record of every application.</p>
         </div>
         <div class="features system-grid">
           <article class="feature-card card-wide">
@@ -199,20 +190,14 @@
             <p>Sign in with Google, build your foundation, and turn the next JD into a tracked resume artifact.</p>
             <button class="btn-primary" type="button" id="landing-bottom-signin">Continue with Google</button>
           </div>
-          <div class="cta-orb" aria-hidden="true"><span></span></div>
+          <div class="cta-edge" aria-hidden="true"></div>
         </div>
       </section>
 
       <section class="workspace app-only" id="workspace">
         <div class="intro">
-          <div class="sphere-shell">
-            <div class="resume-sphere" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          </div>
-          <p class="eyebrow">Resume Intelligence</p>
+          <div class="edge-shell"><span class="hone-mark workspace-mark" aria-hidden="true"></span></div>
+          <p class="eyebrow">Resume tailoring</p>
           <h2>Turn a JD into a tracked application artifact.</h2>
           <p class="lede">
             Generate the resume, then let the system remember the company, role, JD, and files automatically.
@@ -458,7 +443,7 @@
     <div class="modal hidden" id="signin-modal" role="dialog" aria-modal="true" aria-labelledby="signin-title">
       <div class="modal-card onboard-card">
         <aside class="onboard-side">
-          <div class="onboard-brand"><span></span><strong>Identity OS</strong></div>
+          <div class="onboard-brand"><span class="hone-mark"></span><strong>Hone<span class="spark-dot">.</span></strong></div>
           <p>STEP 01 / 04</p>
           <h3>Sign in to begin.</h3>
           <small>Google sign-in keeps your foundation tied to a single, secure identity.</small>
