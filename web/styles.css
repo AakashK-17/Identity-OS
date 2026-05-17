@@ -1634,6 +1634,46 @@ button:disabled {
   background: rgba(255, 255, 255, 0.5);
 }
 
+.proof-card.weak {
+  border-color: rgba(164, 93, 72, 0.32);
+}
+
+.proof-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.strategy-summary {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(30, 30, 28, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.strategy-summary b {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.strategy-summary div,
+.placement-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.strategy-summary span,
+.placement-tags span {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(30, 30, 28, 0.07);
+  font-size: 0.74rem;
+}
+
 .proof-card label {
   display: flex;
   align-items: center;

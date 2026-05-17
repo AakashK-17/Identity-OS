@@ -12,7 +12,7 @@ The product is designed as a job-search memory system, not a one-off resume gene
 - **Resume generation** creates tailored DOCX and PDF files from the user's profile and target JD.
 - **PDF preview** shows the generated resume directly inside the app.
 - **Resume scoring** evaluates ATS alignment, proof strength, readability, role fit, format quality, and interview defensibility.
-- **Proof-first keyword gaps** ask the user for evidence before adding unsupported tools, methods, responsibilities, or domain claims.
+- **Keyword strategy analysis** tracks exact matches, bridge keywords, repetition targets, section distribution, and semantic clusters.
 - **Resume Playground** lets users regenerate a resume version with proof, safe JD additions, or chat-style refinement.
 - **Version history** preserves older resume versions instead of overwriting them.
 - **Searchable job history** stores company, role, JD, timestamp, DOCX, PDF, analysis, and playground notes.
@@ -26,7 +26,7 @@ The product is designed as a job-search memory system, not a one-off resume gene
 5. Identity OS extracts company, role, JD signals, risks, and proof-worthy requirements.
 6. The backend generates a tailored resume as DOCX and PDF.
 7. The app opens the Resume Playground for that run.
-8. User previews the PDF, reviews scores, fills proof gaps, and regenerates new versions when needed.
+8. User previews the PDF, reviews scores and keyword strategy, then regenerates new versions when needed.
 9. Every run is saved automatically into history.
 
 ## Tech Stack
@@ -186,7 +186,7 @@ docker build -t identity-os-resume .
 docker run --rm -p 8787:8787 --env-file .env identity-os-resume
 ```
 
-## JD Intelligence And Proof Gaps
+## JD Intelligence And Keyword Strategy
 
 Identity OS extracts hiring signals from high-signal JD sections only:
 
@@ -216,17 +216,19 @@ Signals are grouped into:
 - `stakeholder_scope`
 - `seniority_signals`
 
-Only concrete proof-worthy signals become proof questions. The app should ask about things like `PyTorch`, `Qdrant`, `Salesforce`, `IRB protocols`, `GAAP`, or `Google Analytics`, not noisy fragments like `Knowledge`, `Current`, `Benefits`, `NASDAQ`, or company names.
+The app turns important signals into a keyword plan with exact phrases, repetition targets, preferred sections, and semantic clusters. It should track terms like `PyTorch`, `Qdrant`, `Salesforce`, `IRB protocols`, `GAAP`, or `Google Analytics`, not noisy fragments like `Knowledge`, `Current`, `Benefits`, `NASDAQ`, or company names.
 
 ## Resume Playground
 
 Each generated resume gets a unique playground with:
 
 - Overall score and category scores
-- Covered JD signals
-- Safe-to-add signals
-- Signals needing user proof
-- Not-recommended unsupported claims
+- Exact matched JD signals
+- Bridge keywords added through projects
+- Weak or underused terms
+- Keyword frequency and section distribution
+- Semantic cluster coverage
+- Keyword placement proof map
 - PDF preview
 - DOCX and PDF downloads
 - Version selector

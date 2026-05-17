@@ -56,7 +56,7 @@ DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESULTS: dict[str, dict] = {}
-JD_INTELLIGENCE_VERSION = 3
+JD_INTELLIGENCE_VERSION = 5
 
 
 MIME_TYPES = {
@@ -252,6 +252,51 @@ def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
     return text
 
 
+SECTION_WEIGHTS = {
+    "summary": 1.35,
+    "recent_experience": 1.25,
+    "older_experience": 1.0,
+    "projects": 1.15,
+    "competencies": 1.2,
+}
+
+
+def cluster_for_signal(term: str, category: str) -> str:
+    lower = term.lower()
+    if any(token in lower for token in ["campaign", "segmentation", "marketing", "google analytics", "paid media", "seo"]):
+        return "marketing analytics"
+    if any(token in lower for token in ["aws", "azure", "snowflake", "databricks", "airflow", "dbt", "docker", "kubernetes", "distributed"]):
+        return "cloud data"
+    if any(token in lower for token in ["rl", "model", "pytorch", "tensorflow", "llm", "vlm", "qdrant", "vector", "simulation"]):
+        return "machine learning"
+    if any(token in lower for token in ["roadmap", "backlog", "agile", "scrum", "requirements", "b2b saas", "payments"]):
+        return "product delivery"
+    if any(token in lower for token in ["hipaa", "irb", "clinical", "patient", "healthcare", "redcap"]):
+        return "clinical operations"
+    if any(token in lower for token in ["gaap", "sox", "financial", "budget", "variance", "forecast", "oracle", "netsuite", "quickbooks"]):
+        return "financial analysis"
+    if category == "stakeholder_scope":
+        return "stakeholder leadership"
+    return category.replace("_", " ")
+
+
+def keyword_defaults(category: str, importance: str) -> tuple[int, int, list[str]]:
+    if importance == "critical":
+        target_min, target_max = 2, 4
+    elif importance == "important":
+        target_min, target_max = 1, 2
+    else:
+        target_min, target_max = 1, 1
+    preferred = ["projects", "competencies"]
+    if category in {"tools_platforms", "methods_frameworks", "seniority_signals"}:
+        preferred = ["summary", "recent_experience", "projects", "competencies"]
+    elif category in {"functional_work", "domain_context"}:
+        preferred = ["recent_experience", "projects", "summary", "competencies"]
+    elif category == "stakeholder_scope":
+        preferred = ["recent_experience", "summary", "competencies"]
+    return target_min, target_max, preferred
+
+
 JD_SIGNAL_CATALOG = {
     "tools_platforms": [
         ("Python", [r"\bpython\b"]),
@@ -421,7 +466,7 @@ SECTION_MAP = {
     "responsibilities": {"responsibility", "responsibilities", "what you'll do", "what you will do", "role responsibilities", "duties", "essential functions"},
     "requirements": {"requirements", "required", "required skills", "qualifications", "minimum qualifications", "what you bring", "basic qualifications"},
     "preferred": {"preferred", "preferred skills", "nice to have", "preferred qualifications", "desired qualifications"},
-    "benefits_compensation": {"compensation", "benefits", "base salary", "salary", "privacy", "equal opportunity", "eeo", "perks"},
+    "benefits_compensation": {"compensation", "benefits", "base salary", "salary", "privacy", "equal opportunity", "eeo", "perks", "additional information", "time type", "employee type", "travel", "relocation eligible"},
 }
 
 
@@ -577,20 +622,43 @@ def make_signal(term: str, category: str, source: str = "parser", importance: st
         "fast": "FAST ecosystem",
         "rl": "reinforcement learning",
     }.get(normalized.lower(), normalized)
+    target_min, target_max, preferred_sections = keyword_defaults(category, importance)
     return {
         "term": canonical,
+        "exact_phrase": canonical,
         "category": category,
         "label": SIGNAL_LABELS.get(category, category.replace("_", " ").title()),
         "source": source,
         "importance": importance if importance in {"critical", "important", "context"} else "important",
         "proof_question": is_proof_worthy_signal(canonical, category, importance, proof_question, evidence_type),
         "evidence_type": evidence_type or category,
+        "target_frequency": {"min": target_min, "max": target_max},
+        "preferred_sections": preferred_sections,
+        "semantic_cluster": cluster_for_signal(canonical, category),
     }
+
+
+def build_keyword_plan(signals: dict) -> list[dict]:
+    plan = []
+    for items in signals.values():
+        for signal in items:
+            plan.append({
+                "term": signal.get("term", ""),
+                "exact_phrase": signal.get("exact_phrase") or signal.get("term", ""),
+                "category": signal.get("category", ""),
+                "label": signal.get("label", ""),
+                "importance": signal.get("importance", "important"),
+                "target_frequency": signal.get("target_frequency", {"min": 1, "max": 2}),
+                "preferred_sections": signal.get("preferred_sections", ["projects", "competencies"]),
+                "semantic_cluster": signal.get("semantic_cluster") or cluster_for_signal(signal.get("term", ""), signal.get("category", "")),
+            })
+    return plan
 
 
 def normalize_llm_signal_payload(payload: dict, sections: dict, source: str) -> dict:
     signals = {category: [] for category in SIGNAL_CATEGORIES}
     seen = set()
+    exact_signal_text = high_signal_jd_text(sections).lower()
     for category in SIGNAL_CATEGORIES:
         values = payload.get(category, [])
         if not isinstance(values, list):
@@ -604,6 +672,8 @@ def normalize_llm_signal_payload(payload: dict, sections: dict, source: str) -> 
                 continue
             if is_ignored_context_signal(term, category, sections):
                 continue
+            if normalize_signal_text(term).lower() not in exact_signal_text:
+                continue
             signal = make_signal(term, category, source, importance, proof_question, evidence_type)
             key = signal["term"].lower()
             if key in seen:
@@ -615,6 +685,7 @@ def normalize_llm_signal_payload(payload: dict, sections: dict, source: str) -> 
         "sections": sections,
         "signals": signals,
         "important_terms": important_terms,
+        "keyword_plan": build_keyword_plan(signals),
         "ignored_sections": ["about_company", "benefits_compensation"],
         "source": source,
     }
@@ -631,7 +702,12 @@ def deterministic_jd_intelligence(jd_text: str) -> dict:
     for category, items in JD_SIGNAL_CATALOG.items():
         for term, patterns in items:
             if any(re.search(pattern, signal_text, re.IGNORECASE | re.DOTALL) for pattern in patterns):
-                signal = make_signal(term, category, "deterministic", "important", category in PROOF_WORTHY_CATEGORIES, category)
+                requirement_text = "\n".join([sections.get("requirements", ""), sections.get("preferred", "")])
+                responsibility_text = sections.get("responsibilities", "")
+                importance = "critical" if any(re.search(pattern, requirement_text, re.IGNORECASE | re.DOTALL) for pattern in patterns) else "important"
+                if category == "functional_work" and any(re.search(pattern, responsibility_text, re.IGNORECASE | re.DOTALL) for pattern in patterns):
+                    importance = "critical"
+                signal = make_signal(term, category, "deterministic", importance, category in PROOF_WORTHY_CATEGORIES, category)
                 key = signal["term"].lower()
                 if key in seen:
                     continue
@@ -643,6 +719,7 @@ def deterministic_jd_intelligence(jd_text: str) -> dict:
         "sections": sections,
         "signals": signals,
         "important_terms": important_terms,
+        "keyword_plan": build_keyword_plan(signals),
         "ignored_sections": ["about_company", "benefits_compensation"],
         "source": "deterministic",
     }
@@ -743,50 +820,144 @@ def contains_term(text: str, signal) -> bool:
     return any(re.search(rf"\b{re.escape(alias.lower())}\b", normalized_text) for alias in aliases.get(term, []))
 
 
-def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof: list[dict] | None = None, jd_intelligence: dict | None = None) -> dict:
-    intelligence = jd_intelligence or extract_jd_intelligence(jd_text)
-    terms = intelligence.get("important_terms", [])
-    generated_text = flatten_generated_text(generated_data or {})
-    evidence_text = profile_to_text(profile, proof)
-    covered = []
-    supported_missing = []
-    needs_user_proof = []
-    not_recommended = []
+def term_occurrences(text: str, signal) -> int:
+    term = signal_term(signal)
+    if not term:
+        return 0
+    normalized_text = (text or "").lower()
+    terms = [term]
+    aliases = {
+        "RL-style methods": ["rl", "reinforcement learning"],
+        "reinforcement learning": ["rl"],
+        "LLM": ["large language model", "llms"],
+        "VLM": ["vision language model", "vlms"],
+        "fine-tuning": ["finetuning", "fine tuning"],
+        "model monitoring": ["monitoring"],
+        "distributed training": ["distributed model training"],
+    }
+    terms.extend(aliases.get(term, []))
+    return sum(len(re.findall(rf"\b{re.escape(candidate.lower())}\b", normalized_text)) for candidate in terms)
 
-    for signal in terms:
-        if contains_term(generated_text, signal):
-            covered.append(signal)
-        elif contains_term(evidence_text, signal):
-            supported_missing.append(signal)
-        elif isinstance(signal, dict) and signal.get("proof_question") is True:
-            needs_user_proof.append(signal)
+
+def generated_section_texts(data: dict) -> dict:
+    projects = []
+    for project in data.get("projects", []) or []:
+        if isinstance(project, dict):
+            projects.append(str(project.get("title", "")))
+            projects.extend(str(item) for item in project.get("bullets", []))
         else:
-            not_recommended.append(signal)
-
-    total = max(1, len(terms))
+            projects.append(str(project))
     return {
-        "important_terms": terms,
-        "covered": covered,
-        "supported_missing": supported_missing[:18],
-        "needs_user_proof": needs_user_proof[:18],
-        "not_recommended": not_recommended[:12],
-        "coverage_percent": round((len(covered) / total) * 100),
+        "summary": str(data.get("summary", "")),
+        "recent_experience": "\n".join(str(item) for item in data.get("destination_cleveland_bullets", []) or []),
+        "older_experience": "\n".join(str(item) for item in data.get("genpact_bullets", []) or []),
+        "projects": "\n".join(projects),
+        "competencies": "\n".join(str(item) for item in data.get("core_competencies", []) or []),
     }
 
 
+def build_keyword_strategy(jd_text: str, generated_data: dict, jd_intelligence: dict | None = None) -> dict:
+    intelligence = jd_intelligence or extract_jd_intelligence(jd_text)
+    plan = intelligence.get("keyword_plan") or build_keyword_plan(intelligence.get("signals", {}))
+    sections = generated_section_texts(generated_data or {})
+    covered = []
+    weak_terms = []
+    frequency = {}
+    proof_map = {}
+    cluster_totals = {}
+    cluster_covered = {}
+    weighted_total = 0
+    weighted_earned = 0
+
+    for signal in plan:
+        term = signal.get("term", "")
+        counts = {section: term_occurrences(text, signal) for section, text in sections.items()}
+        total_count = sum(counts.values())
+        target = signal.get("target_frequency") or {"min": 1, "max": 2}
+        target_min = max(1, int(target.get("min", 1)))
+        target_max = max(target_min, int(target.get("max", target_min)))
+        preferred = signal.get("preferred_sections") or []
+        matched_sections = [section for section, count in counts.items() if count]
+        section_score = sum(SECTION_WEIGHTS.get(section, 1.0) for section in matched_sections if section in preferred)
+        preferred_score_cap = max(1.0, min(2.6, sum(SECTION_WEIGHTS.get(section, 1.0) for section in preferred[:2])))
+        frequency_score = min(1.0, total_count / target_min)
+        placement_score = min(1.0, section_score / preferred_score_cap)
+        exact_score = 1.0 if total_count else 0.0
+        importance_weight = {"critical": 1.45, "important": 1.0, "context": 0.65}.get(signal.get("importance"), 1.0)
+        signal_score = (exact_score * 0.45) + (frequency_score * 0.35) + (placement_score * 0.20)
+        weighted_total += importance_weight
+        weighted_earned += importance_weight * signal_score
+        entry = {
+            **signal,
+            "count": total_count,
+            "counts_by_section": counts,
+            "matched_sections": matched_sections,
+            "target_met": total_count >= target_min,
+            "placement_met": any(section in preferred for section in matched_sections),
+        }
+        frequency[term] = {
+            "count": total_count,
+            "target_min": target_min,
+            "target_max": target_max,
+            "target_met": total_count >= target_min,
+        }
+        proof_map[term] = matched_sections
+        cluster = signal.get("semantic_cluster") or "general"
+        cluster_totals[cluster] = cluster_totals.get(cluster, 0) + 1
+        if total_count:
+            cluster_covered[cluster] = cluster_covered.get(cluster, 0) + 1
+            covered.append(entry)
+        else:
+            weak_terms.append(entry)
+        if total_count and (total_count < target_min or not entry["placement_met"]):
+            weak_terms.append(entry)
+
+    coverage_percent = round((len(covered) / max(1, len(plan))) * 100)
+    ats_strategy_score = round((weighted_earned / max(1, weighted_total)) * 100)
+    semantic_clusters = [
+        {
+            "name": cluster,
+            "covered": cluster_covered.get(cluster, 0),
+            "total": total,
+            "coverage_percent": round((cluster_covered.get(cluster, 0) / max(1, total)) * 100),
+        }
+        for cluster, total in cluster_totals.items()
+    ]
+    section_distribution = {
+        section: sum(term_occurrences(text, signal) for signal in plan)
+        for section, text in sections.items()
+    }
+    return {
+        "important_terms": plan,
+        "keyword_plan": plan,
+        "covered": covered,
+        "bridge_keywords": [item for item in covered if item.get("matched_sections") == ["projects"] or ("projects" in item.get("matched_sections", []) and "recent_experience" not in item.get("matched_sections", []))][:18],
+        "weak_terms": weak_terms[:18],
+        "keyword_frequency": frequency,
+        "section_distribution": section_distribution,
+        "semantic_clusters": semantic_clusters,
+        "proof_map": proof_map,
+        "coverage_percent": coverage_percent,
+        "ats_strategy_score": ats_strategy_score,
+    }
+
+
+def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof: list[dict] | None = None, jd_intelligence: dict | None = None) -> dict:
+    # Backward-compatible alias for history records and frontend callers.
+    return build_keyword_strategy(jd_text, generated_data, jd_intelligence=jd_intelligence)
+
+
 def score_resume(jd_text: str, generated_data: dict, profile: dict, pdf_path: str | None, proof: list[dict] | None = None, jd_intelligence: dict | None = None) -> dict:
-    gaps = build_keyword_gaps(jd_text, generated_data, profile, proof, jd_intelligence=jd_intelligence)
+    strategy = build_keyword_strategy(jd_text, generated_data, jd_intelligence=jd_intelligence)
     resume_text = flatten_generated_text(generated_data or {})
     words = len(re.findall(r"\b[\w+#./-]+\b", resume_text))
-    proof_penalty = min(45, len(gaps["needs_user_proof"]) * 5)
-    supported_penalty = min(20, len(gaps["supported_missing"]) * 3)
     readability = max(55, min(96, 100 - abs(words - 620) // 10))
-    ats = max(0, min(100, gaps["coverage_percent"] - supported_penalty // 2))
-    proof_strength = max(0, 100 - proof_penalty - supported_penalty)
-    role_fit = max(35, min(98, round((ats * 0.65) + (proof_strength * 0.35))))
+    ats = strategy["ats_strategy_score"]
+    proof_strength = max(60, min(100, round((strategy["coverage_percent"] * 0.65) + (ats * 0.35))))
+    role_fit = max(35, min(98, round((ats * 0.75) + (proof_strength * 0.25))))
     format_quality = 95 if pdf_path else 78
-    interview_defensibility = max(0, 100 - proof_penalty)
-    overall = round((ats + proof_strength + readability + role_fit + format_quality + interview_defensibility) / 6)
+    interview_defensibility = max(60, min(100, 100 - len(strategy["weak_terms"]) * 2))
+    overall = round((ats * 0.3) + (proof_strength * 0.15) + (readability * 0.15) + (role_fit * 0.2) + (format_quality * 0.1) + (interview_defensibility * 0.1))
     scores = {
         "ats_keyword_alignment": ats,
         "proof_strength": proof_strength,
@@ -797,29 +968,35 @@ def score_resume(jd_text: str, generated_data: dict, profile: dict, pdf_path: st
         "overall_score": overall,
     }
     explanations = {
-        "ats_keyword_alignment": f"{len(gaps['covered'])} of {len(gaps['important_terms'])} important JD signals are visible in the resume.",
-        "proof_strength": "Unsupported terms are separated for user proof before regeneration.",
+        "ats_keyword_alignment": f"{len(strategy['covered'])} of {len(strategy['important_terms'])} exact JD signals are visible with weighted placement and repetition scoring.",
+        "proof_strength": "Strength reflects exact phrase coverage, section distribution, and how fully the keyword plan is realized.",
         "recruiter_readability": f"The generated resume has about {words} words across summary, experience, projects, and competencies.",
         "role_fit": "Role fit blends keyword coverage with evidence strength.",
         "format_quality": "PDF preview is available." if pdf_path else "DOCX is available; PDF was skipped.",
-        "interview_defensibility": "Claims stay stronger when tools and responsibilities have profile evidence or user proof.",
+        "interview_defensibility": "Claims remain stronger when keyword density is balanced across experience, projects, and competencies.",
     }
     return {
         "scores": scores,
         "explanations": explanations,
         "strengths": [
             "Resume was generated from the user's structured base profile.",
-            "JD terms are evaluated against actual resume text and profile evidence.",
+            "JD terms are evaluated for exact phrase use, frequency, and section placement.",
         ],
         "risks": [
-            "Some JD terms require user proof before safe inclusion."
-        ] if gaps["needs_user_proof"] else [],
-        "missing_keywords": gaps["supported_missing"] + gaps["needs_user_proof"],
-        "unsupported_keywords": gaps["needs_user_proof"],
+            "Some important JD terms are still missing, underused, or weakly placed."
+        ] if strategy["weak_terms"] else [],
+        "missing_keywords": strategy["weak_terms"],
+        "unsupported_keywords": [],
         "suggested_fixes": [
-            "Provide proof for unsupported keywords, then regenerate for stronger ATS alignment.",
+            "Regenerate to strengthen exact JD phrasing, bridge projects, and underused critical terms.",
             "Use playground chat for targeted tone, focus, or section-level rewrites.",
         ],
+        "ats_strategy_score": ats,
+        "keyword_frequency": strategy["keyword_frequency"],
+        "section_distribution": strategy["section_distribution"],
+        "semantic_clusters": strategy["semantic_clusters"],
+        "proof_map": strategy["proof_map"],
+        "weak_terms": strategy["weak_terms"],
     }
 
 
@@ -861,20 +1038,26 @@ def merge_profile_with_proof(profile: dict, proof: list[dict]) -> dict:
     return merged
 
 
-def intelligence_summary(jd_intelligence: dict, supported_missing: list, proven_terms: list) -> str:
+def intelligence_summary(jd_intelligence: dict, strategy: dict | None = None) -> str:
     signals = jd_intelligence.get("signals", {}) if jd_intelligence else {}
-    lines = ["JD INTELLIGENCE SIGNALS TO PRIORITIZE:"]
+    keyword_plan = jd_intelligence.get("keyword_plan", []) if jd_intelligence else []
+    lines = ["JD KEYWORD PLAN TO PRIORITIZE:"]
     for category, items in signals.items():
         values = [signal_term(item) for item in items]
         if values:
             lines.append(f"- {category.replace('_', ' ').title()}: {', '.join(values)}")
-    if supported_missing:
-        lines.append("SUPPORTED MISSING TERMS TO ADD WHERE NATURAL:")
-        lines.extend(f"- {signal_term(item)}" for item in supported_missing)
-    if proven_terms:
-        lines.append("USER-PROVEN TERMS TO ADD WHERE TRUTHFUL:")
-        lines.extend(f"- {item}" for item in proven_terms)
-    lines.append("Do not add unproven needs_user_proof terms.")
+    if keyword_plan:
+        lines.append("EXACT PHRASES, TARGET FREQUENCY, AND PREFERRED SECTIONS:")
+        for item in keyword_plan:
+            target = item.get("target_frequency", {})
+            sections = ", ".join(item.get("preferred_sections", []))
+            lines.append(f"- {item.get('term')}: {target.get('min', 1)}-{target.get('max', 1)} mentions; prefer {sections}; cluster {item.get('semantic_cluster')}")
+    if strategy and strategy.get("weak_terms"):
+        lines.append("WEAK TERMS TO STRENGTHEN IN THIS VERSION:")
+        for item in strategy.get("weak_terms", []):
+            lines.append(f"- {item.get('term')}: current {item.get('count', 0)} mentions; target {item.get('target_frequency', {}).get('min', 1)}+")
+    lines.append("Use projects as the main bridge zone for missing keywords before overloading experience.")
+    lines.append("Mirror the exact JD phrase whenever possible; do not replace it with a synonym.")
     return "\n".join(lines)
 
 
@@ -1023,8 +1206,10 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 base_resume_path = make_template_from_resume(uploaded_path, run_dir / "resume_template.docx")
 
         skip_pdf = form.getfirst("skip_pdf") == "true"
+        jd_intelligence = extract_jd_intelligence(jd_text, api_key=api_key)
+        generation_jd = jd_text + "\n\n" + intelligence_summary(jd_intelligence)
         result = generate_resume_from_jd(
-            jd_text,
+            generation_jd,
             base_resume_path=base_resume_path,
             output_root=OUTPUT_ROOT,
             details=details,
@@ -1033,7 +1218,6 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         )
         result = copy_version_files(result, run_dir, "v1")
         profile_for_analysis = profile_data if profile_json.strip() else {}
-        jd_intelligence = extract_jd_intelligence(jd_text, api_key=api_key)
         keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile_for_analysis, jd_intelligence=jd_intelligence)
         analysis = score_resume(
             jd_text,
@@ -1210,11 +1394,6 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         version_id = f"v{len(current_versions) + 1}"
         run_dir = RUN_DIR / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        proof_text = "\n".join(
-            f"- {entry.get('keyword', '')}: {entry.get('proof', '')}"
-            for entry in item.get("user_proof", [])
-            if entry.get("used") is True and entry.get("proof")
-        )
         augmented_jd = item.get("jd", "")
         previous = active_version(item)
         current_gaps = build_keyword_gaps(
@@ -1224,24 +1403,13 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             item.get("user_proof", []),
             jd_intelligence=jd_intelligence,
         )
-        proven_terms = [
-            entry.get("keyword", "")
-            for entry in item.get("user_proof", [])
-            if entry.get("used") is True and entry.get("proof")
-        ]
-        augmented_jd += "\n\n" + intelligence_summary(
-            jd_intelligence,
-            current_gaps.get("supported_missing", []),
-            proven_terms,
-        )
+        augmented_jd += "\n\n" + intelligence_summary(jd_intelligence, current_gaps)
         augmented_jd += "\n\nPREVIOUS STRUCTURED RESUME VERSION:\n" + json.dumps(previous.get("structured_resume", {}), indent=2)
-        if proof_text:
-            augmented_jd += "\n\nUSER-VERIFIED PROOF TO USE ONLY WHERE CREDIBLE:\n" + proof_text
         if instruction:
             augmented_jd += "\n\nPLAYGROUND REGENERATION REQUEST:\n" + instruction
 
         source_profile = item.get("profile", {}) if isinstance(item.get("profile"), dict) else {}
-        profile = merge_profile_with_proof(source_profile, item.get("user_proof", []))
+        profile = source_profile
         details = profile.get("details", {}) if isinstance(profile, dict) else {}
         if profile_has_content(profile):
             template_path = create_template_from_profile(profile, run_dir / f"{version_id}_template.docx")
@@ -1293,7 +1461,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             current["user_proof"] = item.get("user_proof", [])
             current.setdefault("playground_notes", []).append({
                 "created_at": version["created_at"],
-                "message": instruction or "Regenerated with saved proof.",
+                "message": instruction or "Regenerated against the keyword strategy plan.",
             })
             return current
 

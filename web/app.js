@@ -36,7 +36,6 @@ const previewEmpty = document.querySelector("#preview-empty");
 const resumePreview = document.querySelector("#resume-preview");
 const activeRunLabel = document.querySelector("#active-run-label");
 const proofList = document.querySelector("#proof-list");
-const saveProofButton = document.querySelector("#save-proof");
 const playgroundMessage = document.querySelector("#playground-message");
 const regenerateButton = document.querySelector("#regenerate-resume");
 const regenStatus = document.querySelector("#regen-status");
@@ -535,7 +534,7 @@ function renderPlayground(item) {
   renderVersions(item);
   renderScores(version.analysis || item.analysis || {});
   renderKeywordGaps(version.keyword_gaps || item.keyword_gaps || {});
-  renderProofQuestions(item, version.keyword_gaps || item.keyword_gaps || {});
+  renderKeywordStrategy(version.keyword_gaps || item.keyword_gaps || {});
   renderPlaygroundNotes(item);
   setRegenStatus("", state.openaiConfigured ? "Ready to create a new version." : "Server OpenAI key is not configured. Add a key in the form or server environment.");
 }
@@ -587,7 +586,7 @@ function renderScores(analysis) {
   if (!scoreList) return;
   const labels = {
     ats_keyword_alignment: "ATS alignment",
-    proof_strength: "Proof strength",
+    proof_strength: "Keyword depth",
     recruiter_readability: "Readability",
     role_fit: "Role fit",
     format_quality: "Format",
@@ -636,62 +635,69 @@ function renderGapGroup(title, items, className) {
 
 function renderKeywordGaps(gaps) {
   if (!keywordGaps) return;
-  const safe = gaps.supported_missing || [];
-  const proof = gaps.needs_user_proof || [];
   const covered = gaps.covered || [];
-  const notRecommended = gaps.not_recommended || [];
+  const bridge = gaps.bridge_keywords || [];
+  const weak = gaps.weak_terms || [];
   keywordGaps.innerHTML = `
-    <strong>JD signal coverage: ${gaps.coverage_percent ?? "--"}%</strong>
-    <p>${covered.length} covered - ${safe.length} safe to add - ${proof.length} need proof - ${notRecommended.length} risky without stronger evidence</p>
-    ${renderGapGroup("Covered", covered, "covered")}
-    ${renderGapGroup("Safe to add", safe, "safe")}
-    ${renderGapGroup("Needs your proof", proof, "proof")}
-    ${renderGapGroup("Not recommended without stronger evidence", notRecommended, "risk")}
+    <strong>ATS strategy score: ${gaps.ats_strategy_score ?? "--"}%</strong>
+    <p>${covered.length} exact matches - ${bridge.length} bridged through projects - ${weak.length} weak or underused terms</p>
+    ${renderGapGroup("Exact matches", covered, "covered")}
+    ${renderGapGroup("Bridge keywords", bridge, "safe")}
+    ${renderGapGroup("Weak terms", weak, "risk")}
   `;
 }
 
-function renderProofQuestions(item, gaps) {
+function prettySection(section) {
+  return {
+    summary: "Summary",
+    recent_experience: "Recent Experience",
+    older_experience: "Older Experience",
+    projects: "Projects",
+    competencies: "Core Competencies",
+  }[section] || section;
+}
+
+function renderKeywordStrategy(gaps) {
   if (!proofList) return;
-  const existing = item.user_proof || [];
-  const existingMap = new Map(existing.map((proof) => [String(proof.keyword || "").toLowerCase(), proof]));
-  const terms = gaps.needs_user_proof || [];
+  const plan = gaps.keyword_plan || gaps.important_terms || [];
+  const weakMap = new Set((gaps.weak_terms || []).map((item) => signalTerm(item)));
   if (regenerateButton) {
-    regenerateButton.textContent = terms.length ? "Regenerate with Proven Signals" : ((gaps.supported_missing || []).length ? "Regenerate with Safe Additions" : "Regenerate Version");
+    regenerateButton.textContent = (gaps.weak_terms || []).length ? "Strengthen Keyword Plan" : "Regenerate Version";
   }
-  if (!terms.length) {
-    const hasSafe = (gaps.supported_missing || []).length > 0;
-    proofList.innerHTML = `<div class="proof-empty">${hasSafe ? "Resume is fully aligned with supported JD signals. Safe additions can be regenerated without proof." : "Resume is fully aligned with supported JD signals."}</div>`;
+  if (!plan.length) {
+    proofList.innerHTML = `<div class="proof-empty">Generate a resume to inspect keyword strategy.</div>`;
     return;
   }
-  proofList.innerHTML = terms.map((signal) => {
+  const clusters = (gaps.semantic_clusters || []).map((cluster) => `<span>${escapeHtml(cluster.name)} ${cluster.covered}/${cluster.total}</span>`).join("");
+  const distribution = Object.entries(gaps.section_distribution || {}).map(([section, count]) => `<span>${escapeHtml(prettySection(section))}: ${count}</span>`).join("");
+  const cards = plan.map((signal) => {
     const term = signalTerm(signal);
     const category = signalCategory(signal);
-    const saved = existingMap.get(String(term).toLowerCase()) || {};
+    const freq = gaps.keyword_frequency?.[term] || {};
+    const placements = gaps.proof_map?.[term] || [];
+    const weak = weakMap.has(term);
     return `
-      <article class="proof-card" data-keyword="${escapeHtml(term)}" data-category="${escapeHtml(category)}">
+      <article class="proof-card ${weak ? "weak" : ""}">
         <div>
           <strong>${escapeHtml(term)}</strong>
           <span class="proof-category">${escapeHtml(category)}</span>
         </div>
-        <label><input type="checkbox" data-field="used" ${saved.used === true ? "checked" : ""} /> Yes, I have used this</label>
-        <select data-field="where">
-          ${["Experience", "Project", "Skills", "Education", "Certification", "Other"].map((value) => `<option ${saved.where === value ? "selected" : ""}>${value}</option>`).join("")}
-        </select>
-        <textarea data-field="proof" placeholder="Where did you use it? Add 1-2 sentences of proof.">${escapeHtml(saved.proof || "")}</textarea>
+        <p>${freq.count || 0}/${freq.target_min || 1} mentions ${freq.target_met ? "met" : "needed"}</p>
+        <div class="placement-tags">
+          ${(placements.length ? placements : ["Not placed"]).map((section) => `<span>${escapeHtml(prettySection(section))}</span>`).join("")}
+        </div>
       </article>
     `;
   }).join("");
-}
-
-function collectProof() {
-  if (!proofList) return [];
-  return [...proofList.querySelectorAll(".proof-card")].map((card) => ({
-    keyword: card.dataset.keyword || "",
-    category: card.dataset.category || "",
-    used: card.querySelector('[data-field="used"]')?.checked || false,
-    where: card.querySelector('[data-field="where"]')?.value || "",
-    proof: card.querySelector('[data-field="proof"]')?.value.trim() || "",
-  }));
+  proofList.innerHTML = `
+    <div class="strategy-summary">
+      <b>Semantic clusters</b>
+      <div>${clusters || "<span>None yet</span>"}</div>
+      <b>Section distribution</b>
+      <div>${distribution || "<span>None yet</span>"}</div>
+    </div>
+    ${cards}
+  `;
 }
 
 function renderPlaygroundNotes(item) {
@@ -705,49 +711,24 @@ function renderPlaygroundNotes(item) {
   `;
 }
 
-async function saveProof() {
-  if (!state.activeResume?.id) {
-    setInlineStatus("error", "Open a resume playground first.");
-    return;
-  }
-  const proof = collectProof();
-  const response = await fetch(`/api/resume/${state.activeResume.id}/proof`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ proof }),
-  });
-  const item = await response.json();
-  if (!response.ok) throw new Error(item.error || "Could not save proof.");
-  renderPlayground({ ...item, active_version: activeVersion(item) });
-  setInlineStatus("success", "Proof saved. You can regenerate with stronger ATS coverage.");
-}
-
 async function regenerateActiveResume() {
   if (!state.activeResume?.id) {
     setInlineStatus("error", "Open a resume playground first.");
     setRegenStatus("error", "Open a resume playground first.");
     return;
   }
-  const proof = collectProof();
   const instruction = playgroundMessage?.value.trim() || "";
-  const missingProof = proof.some((item) => item.used && !item.proof);
-  if (missingProof) {
-    const message = "Add proof text for checked keywords before regenerating.";
-    setInlineStatus("error", message);
-    setRegenStatus("error", message);
-    return;
-  }
   regenerateButton.disabled = true;
   const originalLabel = regenerateButton.textContent;
   regenerateButton.textContent = "Regenerating...";
-  setInlineStatus("busy", "Creating a new resume version from proof and chat instructions.");
+  setInlineStatus("busy", "Creating a new resume version from the keyword strategy and chat instructions.");
   setRegenStatus("busy", "Regenerating version...");
-  setStatus("Regenerating", "Creating a new version from your proof, JD signals, and refinement request.");
+  setStatus("Regenerating", "Creating a new version from the JD keyword plan and refinement request.");
   try {
     const response = await fetch(`/api/resume/${state.activeResume.id}/regenerate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ proof, instruction, api_key: apiKeyInput?.value.trim() || "" }),
+      body: JSON.stringify({ instruction, api_key: apiKeyInput?.value.trim() || "" }),
     });
     const item = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(item.error || "Regeneration failed.");
@@ -970,13 +951,6 @@ logoutButton?.addEventListener("click", logout);
 historySearch?.addEventListener("input", renderHistory);
 versionSelect?.addEventListener("change", () => {
   activateVersion(versionSelect.value).catch((error) => setInlineStatus("error", error.message));
-});
-saveProofButton?.addEventListener("click", async () => {
-  try {
-    await saveProof();
-  } catch (error) {
-    setInlineStatus("error", error.message);
-  }
 });
 regenerateButton?.addEventListener("click", async () => {
   try {

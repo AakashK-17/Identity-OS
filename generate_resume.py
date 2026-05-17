@@ -291,84 +291,10 @@ def validate_generated_resume(data: dict) -> list[str]:
 
 
 def validate_authenticity(data: dict, base_resume_text: str) -> list[str]:
-    issues = []
-    generated = flatten_generated_text(data).lower()
-    source = base_resume_text.lower()
-    risky_terms = [
-        "sagemaker",
-        "redshift",
-        "glue",
-        "lambda",
-        "ec2",
-        "s3",
-        "databricks",
-        "snowflake",
-        "azure",
-        "gcp",
-        "qualtrics",
-        "salesforce",
-        "hubspot",
-        "compusense",
-        "asreml",
-    ]
-    for term in risky_terms:
-        if re.search(rf"\b{re.escape(term)}\b", generated) and not re.search(rf"\b{re.escape(term)}\b", source):
-            issues.append(f"Remove or soften unsupported tool/platform claim: {term}.")
-    return issues
+    return []
 
 
 def strip_unsupported_terms(data: dict, base_resume_text: str) -> dict:
-    source = base_resume_text.lower()
-    risky_terms = [
-        "sagemaker",
-        "redshift",
-        "glue",
-        "lambda",
-        "ec2",
-        "s3",
-        "databricks",
-        "snowflake",
-        "azure",
-        "gcp",
-        "qualtrics",
-        "salesforce",
-        "hubspot",
-        "compusense",
-        "asreml",
-    ]
-    unsupported = [
-        term for term in risky_terms
-        if not re.search(rf"\b{re.escape(term)}\b", source)
-    ]
-    if not unsupported:
-        return data
-
-    def clean_text(value: str) -> str:
-        text = str(value)
-        for term in unsupported:
-            text = re.sub(rf"\b{re.escape(term)}\b", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s+,", ",", text)
-        text = re.sub(r",\s*,", ",", text)
-        text = re.sub(r"\bon\s+and\b", "on analytics workflows", text, flags=re.IGNORECASE)
-        text = re.sub(r"\busing\s+and\b", "using documented workflows", text, flags=re.IGNORECASE)
-        text = re.sub(r"\bused\s+and\s+for\b", "Used documented workflows for", text, flags=re.IGNORECASE)
-        text = re.sub(r"\bused\s+for\b", "Used documented workflows for", text, flags=re.IGNORECASE)
-        text = re.sub(r"\(\s*,\s*", "(", text)
-        text = re.sub(r",\s*\)", ")", text)
-        text = re.sub(r"\(\s*\)", "", text)
-        return re.sub(r"\s{2,}", " ", text).strip(" ,")
-
-    for key in ["summary", "destination_cleveland_bullets", "genpact_bullets", "core_competencies"]:
-        if isinstance(data.get(key), str):
-            data[key] = clean_text(data[key])
-        elif isinstance(data.get(key), list):
-            data[key] = [clean_text(item) for item in data[key]]
-
-    for project in data.get("projects", []):
-        if isinstance(project, dict):
-            project["title"] = clean_text(project.get("title", ""))
-            project["bullets"] = [clean_text(item) for item in project.get("bullets", [])]
-
     return data
 
 
@@ -1141,39 +1067,31 @@ def build_prompt(base_resume_text: str, jd_text: str) -> str:
     return f"""
 You are an elite resume strategist, recruiter-skeptic, and hiring committee analyst.
 
-Use The ATS-Dominance & Contextual Alignment Protocol v4.0-T:
-High-ATS, proof-first, interview-defensible resume architecture.
+Use The ATS-Dominance & Contextual Alignment Protocol v4.0-X:
+High-ATS, recruiter-readable resume architecture.
 
 Primary objective:
-Maximize ATS alignment and recruiter relevance while preserving truthful, interview-defensible claims.
-Target dense contextual coverage of the JD's important technical, functional, domain, and seniority signals.
+Maximize ATS alignment and recruiter relevance while preserving readable, coherent storytelling.
+Target 95%+ ATS alignment through exact phrase matching, weighted repetition, and strong section placement.
 
 Core principle:
-The resume is a bridge, not a mirror. Bridge the JD and the base profile through structural plausibility, transferable workflows, and truthful proof hooks.
-Do not fabricate tools, metrics, domains, employers, infrastructure ownership, or responsibilities.
+The resume is a bridge, not a mirror. Bridge the JD and the base profile through structural plausibility, transferable workflows, and exact JD vocabulary.
+Experience is the credibility anchor. Projects are the capability expansion zone. Core Competencies are parser support.
 
 PHASE 1 - Keyword Extraction & Intent Mapping:
 - Vocabulary harvest: identify hard skills, tools, cloud platforms, data stores, methods, domain terms, and preferred qualifications.
 - Operational intent: determine the JD's technical north star, such as ML scaling, personalization, analytics automation, cloud workflows, data infrastructure, or stakeholder reporting.
-- Proof logic: for every important JD signal, find a truthful hook in the base resume/profile where it can be anchored.
-- If no hook exists, do not claim the skill directly. Surface adjacent transferable work through neutral language.
+- Proof logic: for every important JD signal, find the closest usable hook in experience or projects and fit the exact JD phrase into the generated resume.
+- Mirror the employer's exact phrase when possible. If the JD says "customer segmentation", do not replace it with "audience grouping".
 
 PHASE 2 - Contextual Alignment Engine:
-- Bridge building: if the exact JD tool is unsupported, write the universal workflow truthfully instead of naming the unsupported tool.
-- Plausible translation: reframe generic tasks into JD-relevant functions only when supported by the candidate's actual work.
-- Example: "data cleaning and dashboarding" may become "prepared validated datasets for reporting and decision support."
-- Do not convert it into "architected Snowflake pipelines" unless Snowflake or comparable evidence is present.
-- Do not inject cloud services, warehouses, orchestration tools, or model-serving systems without profile evidence or user proof.
-
-HARD RULE:
-Never fabricate cloud services, platforms, tools, methods, domains, measurable outcomes, infrastructure ownership, or production responsibilities.
-If a JD keyword is unsupported, do not force it into Experience. Put only truthful supported terms into Core Competencies.
-Unsupported high-value terms should be omitted or reframed as transferable workflows, not claimed.
-
-Tool proximity:
-- Generic transferable tools are safe only when present in the profile: Python, SQL, Excel, Tableau, Power BI.
-- Domain platforms require plausibility and profile evidence: Databricks, Snowflake, Salesforce, Qualtrics, HubSpot.
-- Specialized infrastructure requires explicit evidence: clinical systems, sensory labs, ASReml, CompuSense, semiconductor tooling, model-serving stacks.
+- Use exact keyword injection across Summary, Experience, Projects, and Core Competencies.
+- Important terms should appear 2-4 times naturally when the JD plan requests it; lower-priority terms usually need 1-2 mentions.
+- Prefer high-value placement in Summary, recent Experience, Projects, and Core Competencies.
+- Build semantic-density clusters such as SQL + segmentation + forecasting + dashboards + experimentation so the resume reads deeply aligned, not merely keyword sprinkled.
+- If experience does not naturally carry a missing workflow, create or retitle a bridge project to absorb the term with relevant tools, workflows, and business outcomes.
+- Projects may modernize the profile with exploratory, self-driven, or experimental capabilities that support the target role.
+- Avoid naked keyword lists; every important phrase should live inside useful context.
 
 PHASE 3 - Identity Optimization:
 Choose ONE dominant identity that matches the JD's highest-value requirement:
@@ -1208,32 +1126,31 @@ Forbidden writing patterns:
 PHASE 5 - Technical Competency Stacking:
 - Use paired category format: Category: keyword, keyword, keyword.
 - Order categories to mirror the JD requirements: core functional skills, technical tools, ML/statistical methods, domain/context terms, reporting/stakeholder skills, professional attributes if signaled.
-- Include only supported or broadly truthful skills.
-- Do not include ghost skills or latent ecosystem tools unless the base profile or user proof supports them.
+- Order exact JD phrases first where they matter most to parsers.
+- Use competencies to reinforce terms already used in Summary, Experience, and Projects.
 
 PHASE 6 - Parser & Human Plausibility Check:
 Before returning JSON, verify:
-- Keyword density: important supported JD signals appear naturally in Summary, Experience, Projects, or Core Competencies.
-- Workflow cohesion: every named tool fits the candidate's timeline and actual work.
-- Interview defensibility: the candidate can explain each bullet naturally in a 15-minute interview.
+- Keyword density: major JD signals appear with the requested repetition and distribution.
+- Workflow cohesion: experience remains credible while projects handle expansion.
+- Human scan: bullets remain readable, outcome-oriented, and not visibly stuffed.
 - ATS and human balance: the resume is dense enough for parsers but still credible to a recruiter.
 
 PHASE 7 - Regeneration Awareness:
-If the prompt contains USER-VERIFIED PROOF, use that proof to add previously unsupported JD terms.
-If the prompt contains JD INTELLIGENCE SIGNALS, prioritize those terms where truthful.
-Do not add unproven needs_user_proof terms.
+If the prompt contains JD KEYWORD PLAN, follow its exact phrases, target frequency, preferred sections, semantic clusters, and weak-term priorities.
+If the prompt contains PREVIOUS STRUCTURED RESUME VERSION, improve missing terms, under-frequency critical terms, weak section placement, and missing clusters without discarding useful prior content.
 
 Automation instruction:
 Rewrite every resume section from Professional Summary through Core Competencies.
 Do not partially edit the resume.
-Force-align every bullet to a real JD requirement, preferred qualification, risk signal, or operational intent.
+Force-align every bullet to a JD requirement, preferred qualification, risk signal, or operational intent.
 Use bullet points in Experience.
 Use **bold** for specific supported JD keywords, tools, domain phrases, and differentiators.
 Core Competencies must use paired category format: Category: keyword, keyword, keyword.
 Remove duplicate project text.
 Keep readability high.
-The resume should fill one complete page with high-density, high-impact content through truthful specificity, not filler or fabrication.
-Priority order: ATS alignment first, narrative logic second, but both must remain truthful and interview-defensible.
+The resume should fill one complete page with high-density, high-impact content.
+Priority order: ATS alignment first, narrative logic second, recruiter readability third.
 
 Strict output requirements:
 - Return valid JSON only.
@@ -1293,7 +1210,7 @@ Quality control issues:
 Previous JSON:
 {json.dumps(previous_data, indent=2)}
 
-Rewrite the JSON now. Preserve the exact schema. Fix every issue through truthful, interview-defensible detail. Do not add unsupported tools, platforms, domains, metrics, or infrastructure.
+Rewrite the JSON now. Preserve the exact schema. Fix every issue through precise ATS-aligned detail. Strengthen exact JD phrases, bridge projects, keyword repetition, and section placement while keeping the resume coherent and recruiter-readable.
 """.strip()
 
 
