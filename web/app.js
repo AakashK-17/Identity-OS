@@ -31,6 +31,10 @@ const overallScore = document.querySelector("#overall-score");
 const scoreList = document.querySelector("#score-list");
 const keywordGaps = document.querySelector("#keyword-gaps");
 const playgroundMeta = document.querySelector("#playground-meta");
+const workspaceTitle = document.querySelector("#workspace-title");
+const workspaceRoleLabel = document.querySelector("#workspace-role-label");
+const workspaceRunChip = document.querySelector("#workspace-run-chip");
+const previewDocumentMeta = document.querySelector("#preview-document-meta");
 const versionSelect = document.querySelector("#version-select");
 const previewEmpty = document.querySelector("#preview-empty");
 const resumePreview = document.querySelector("#resume-preview");
@@ -575,7 +579,14 @@ function renderPlayground(item) {
   const version = item.active_version || activeVersion(item);
   setStatus(item.company || "Resume", `${item.role || "Role"} playground opened.`);
   if (playgroundMeta) playgroundMeta.textContent = `${item.company || "Company"} - ${item.role || "Role"} - ${formatDate(item.created_at)}`;
+  if (workspaceTitle) workspaceTitle.textContent = `${item.company || "Company"} - ${item.role || "Role"}`;
+  if (workspaceRoleLabel) workspaceRoleLabel.textContent = item.role || "Generated Resume";
+  if (workspaceRunChip) workspaceRunChip.textContent = item.id ? `run ${item.id.slice(0, 8)}` : "run active";
   if (activeRunLabel) activeRunLabel.textContent = item.id ? `Run ${item.id.slice(0, 8)}` : "Active";
+  if (previewDocumentMeta) {
+    const versionLabel = version?.id ? version.id.toUpperCase() : "V1";
+    previewDocumentMeta.textContent = `${versionLabel} - PDF preview`;
+  }
   renderDownloads(item);
   renderPreview(item);
   renderVersions(item);

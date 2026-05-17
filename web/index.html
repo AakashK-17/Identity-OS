@@ -330,56 +330,87 @@
         </form>
       </section>
 
-      <section class="review app-only" id="history">
-        <div class="review-shell playground-shell">
-          <aside class="status-panel score-panel" id="status-panel">
-            <p class="eyebrow">Output</p>
-            <h2 id="status-title">Ready</h2>
-            <p id="status-copy">Your DOCX and PDF will appear here when the system finishes.</p>
-            <div class="overall-score">
-              <span id="overall-score">--</span>
-              <small>Overall</small>
+      <section class="review app-only generate-workspace" id="history">
+        <div class="generate-shell">
+          <header class="generate-topbar">
+            <div class="generate-breadcrumb">
+              <span class="brand-mark compact"></span>
+              <span>Workspace</span>
+              <i>/</i>
+              <span>Roles</span>
+              <i>/</i>
+              <strong id="workspace-role-label">Generated Resume</strong>
             </div>
-            <div class="score-list" id="score-list"></div>
-            <div class="keyword-gaps" id="keyword-gaps"></div>
-          </aside>
+            <div class="generate-meta">
+              <span class="memory-chip"><b></b>Saved to memory</span>
+              <span class="memory-chip mono-chip" id="workspace-run-chip">run pending</span>
+            </div>
+          </header>
 
-          <section class="preview-panel">
-            <div class="panel-head">
-              <div>
-                <p>Resume Preview</p>
-                <span id="playground-meta">Generate a resume to open the playground.</span>
-              </div>
+          <div class="generate-workstrip">
+            <div>
+              <p class="workspace-kicker">Role result</p>
+              <h2 id="workspace-title">Generate a resume to open the workspace.</h2>
+              <p id="playground-meta">Your generated company, role, and JD metadata will appear here.</p>
+            </div>
+            <div class="workspace-version-rail">
+              <label for="version-select">Versions</label>
               <select id="version-select" aria-label="Resume version"></select>
             </div>
-            <div class="resume-preview-empty" id="preview-empty">
-              <span>PDF preview will appear here.</span>
-            </div>
-            <iframe class="resume-preview-frame hidden" id="resume-preview" title="Generated resume preview"></iframe>
-            <div class="downloads" id="downloads"></div>
-          </section>
+          </div>
 
-          <aside class="history-panel playground-panel">
-            <div class="panel-head">
-              <p>AI Playground</p>
-              <span id="active-run-label">No resume</span>
-            </div>
-            <div class="proof-panel">
-              <strong>Keyword Strategy</strong>
-              <p>Exact matches, bridge keywords, repetition coverage, and section placement for this resume version.</p>
-              <div id="proof-list"></div>
-            </div>
-            <label class="playground-chat">
-              <span>Refinement request</span>
-              <textarea id="playground-message" placeholder="Example: Make this more data science focused, and add AWS S3 because I used it in my analytics project."></textarea>
-            </label>
-            <button type="button" id="regenerate-resume">Regenerate Version</button>
-            <div class="regen-status" id="regen-status" role="status" aria-live="polite">
-              <span></span>
-              <p>Ready to create a new version.</p>
-            </div>
-            <div class="playground-notes" id="playground-notes"></div>
-          </aside>
+          <div class="generate-main">
+            <aside class="generate-col signals-col status-panel score-panel" id="status-panel">
+              <div class="column-label">
+                <span>Identity Signal</span>
+                <span id="active-run-label">No resume</span>
+              </div>
+              <div class="signal-score">
+                <strong id="overall-score">--</strong>
+                <div>
+                  <span>Overall</span>
+                  <p id="status-title">Ready</p>
+                </div>
+              </div>
+              <p class="signal-copy" id="status-copy">Your DOCX and PDF will appear here when the system finishes.</p>
+              <div class="score-list" id="score-list"></div>
+              <div class="keyword-gaps" id="keyword-gaps"></div>
+            </aside>
+
+            <section class="generate-col document-col preview-panel">
+              <div class="column-label">
+                <span>Resume Preview</span>
+                <span id="preview-document-meta">PDF preview</span>
+              </div>
+              <div class="resume-preview-empty" id="preview-empty">
+                <span>PDF preview will appear here.</span>
+              </div>
+              <iframe class="resume-preview-frame hidden" id="resume-preview" title="Generated resume preview"></iframe>
+              <div class="downloads" id="downloads"></div>
+            </section>
+
+            <aside class="generate-col tailor-col history-panel playground-panel">
+              <div class="column-label">
+                <span>AI Playground</span>
+                <span>Refine</span>
+              </div>
+              <div class="proof-panel">
+                <strong>Keyword Strategy</strong>
+                <p>Exact matches, bridge keywords, repetition coverage, and section placement for this resume version.</p>
+                <div id="proof-list"></div>
+              </div>
+              <label class="playground-chat">
+                <span>Refinement request</span>
+                <textarea id="playground-message" placeholder="Example: Make this more data science focused, tighten the summary, or strengthen weak terms."></textarea>
+              </label>
+              <button type="button" id="regenerate-resume">Regenerate Version</button>
+              <div class="regen-status" id="regen-status" role="status" aria-live="polite">
+                <span></span>
+                <p>Ready to create a new version.</p>
+              </div>
+              <div class="playground-notes" id="playground-notes"></div>
+            </aside>
+          </div>
 
           <div class="history-panel history-wide">
             <div class="panel-head">
