@@ -1254,6 +1254,17 @@ a { color: inherit; text-decoration: none; }
   border-color: var(--spark);
   box-shadow: 0 0 0 3px rgba(255,90,31,0.10);
 }
+.jd-actions .toggle > span {
+  width: auto;
+  height: auto;
+  position: static;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.jd-actions .toggle > span::after {
+  content: none;
+}
 .btn.lg { height: 40px; padding: 0 18px; font-size: 13.5px; font-weight: 600; }
 
 /* ──────────── Active-artifact separator ──────────── */
