@@ -160,6 +160,19 @@ body.signed-in .workspace {
   padding-top: 112px;
 }
 
+body.signed-in .legacy-workspace,
+body.signed-in .topbar {
+  display: none !important;
+}
+
+#hone-workspace-root {
+  display: none;
+}
+
+body.signed-in #hone-workspace-root {
+  display: block;
+}
+
 .landing {
   min-height: 88vh;
   display: grid;

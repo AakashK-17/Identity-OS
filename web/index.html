@@ -25,6 +25,7 @@
     <script src="https://unpkg.com/three@0.160.0/build/three.min.js" defer></script>
     <script src="/identity-engine.js" defer></script>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/workspace-styles.css" />
   </head>
   <body>
     <!-- Google Tag Manager (noscript) -->
@@ -194,7 +195,7 @@
         </div>
       </section>
 
-      <section class="workspace app-only" id="workspace">
+      <section class="workspace app-only legacy-workspace" id="workspace">
         <div class="intro">
           <div class="edge-shell"><span class="hone-mark workspace-mark" aria-hidden="true"></span></div>
           <p class="eyebrow">Resume tailoring</p>
@@ -315,7 +316,7 @@
         </form>
       </section>
 
-      <section class="review app-only generate-workspace" id="history">
+      <section class="review app-only generate-workspace legacy-workspace" id="history">
         <div class="generate-shell">
           <header class="generate-topbar">
             <div class="generate-breadcrumb">
@@ -415,7 +416,7 @@
         </div>
       </section>
 
-      <section class="workflow app-only" id="system">
+      <section class="workflow app-only legacy-workspace" id="system">
         <div>
           <p class="eyebrow">Operating Model</p>
           <h2>Understand, position, produce, remember.</h2>
@@ -474,6 +475,15 @@
       </div>
     </div>
 
+    <div id="hone-workspace-root" class="app-only"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="/app.js"></script>
+    <script type="text/babel" src="/workspace-shared.jsx"></script>
+    <script type="text/babel" src="/workspace-views.jsx"></script>
+    <script type="text/babel" src="/workspace-live.jsx"></script>
+    <script type="text/babel" src="/workspace-app.jsx"></script>
   </body>
 </html>

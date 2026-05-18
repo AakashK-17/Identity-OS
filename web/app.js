@@ -76,6 +76,28 @@ const state = {
   activeResume: null,
 };
 
+function emitHoneState() {
+  window.dispatchEvent(new CustomEvent("hone:state", {
+    detail: {
+      user: state.user,
+      history: state.history,
+      profile: state.profile,
+      activeResume: state.activeResume,
+      openaiConfigured: state.openaiConfigured,
+    },
+  }));
+}
+
+function getHoneSnapshot() {
+  return {
+    user: state.user,
+    history: state.history,
+    profile: state.profile,
+    activeResume: state.activeResume,
+    openaiConfigured: state.openaiConfigured,
+  };
+}
+
 class ApiError extends Error {
   constructor(message, details = {}) {
     super(message);
@@ -397,6 +419,7 @@ function applyUser(profile) {
   if (signinOpen) signinOpen.classList.add("hidden");
   if (heroSignin) heroSignin.classList.add("hidden");
   pauseIdentityScenes();
+  emitHoneState();
 }
 
 function logout() {
@@ -417,6 +440,7 @@ function logout() {
   renderHistory();
   setInlineStatus("", "Signed out. The workspace is ready for the next user.");
   document.querySelector("#home")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  emitHoneState();
 }
 
 function decodeJwtPayload(token) {
@@ -516,6 +540,7 @@ async function loadHistory() {
   const result = await apiFetch(`/api/history?email=${encodeURIComponent(state.user.email)}`, {}, "loading your history");
   state.history = result.items || [];
   renderHistory();
+  emitHoneState();
 }
 
 function renderHistory() {
@@ -567,6 +592,7 @@ async function openPlayground(runId) {
   renderPlayground(item);
   setInlineStatus("success", "Resume playground is ready.");
   document.querySelector("#history")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return item;
 }
 
 function activeVersion(item) {
@@ -576,6 +602,7 @@ function activeVersion(item) {
 
 function renderPlayground(item) {
   state.activeResume = item;
+  emitHoneState();
   const version = item.active_version || activeVersion(item);
   setStatus(item.company || "Resume", `${item.role || "Role"} playground opened.`);
   if (playgroundMeta) playgroundMeta.textContent = `${item.company || "Company"} - ${item.role || "Role"} - ${formatDate(item.created_at)}`;
@@ -979,6 +1006,7 @@ async function saveBaseProfile() {
   }, "saving your base resume");
   state.profile = result.profile;
   setInlineStatus("success", "Base resume saved. Future JDs will use this structured profile.");
+  emitHoneState();
 }
 
 async function loadProfile() {
@@ -989,7 +1017,75 @@ async function loadProfile() {
   const result = await apiFetch(`/api/profile?email=${encodeURIComponent(state.user.email)}`, {}, "loading your base resume");
   state.profile = result.profile || {};
   hydrateProfile(state.profile);
+  emitHoneState();
 }
+
+async function saveProfileFromWorkspace(profile) {
+  if (!state.user?.email) {
+    throw new ApiError("Sign in first so your base resume can be saved.");
+  }
+  const result = await apiFetch("/api/profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: state.user.email, profile }),
+  }, "saving your base resume");
+  state.profile = result.profile || profile;
+  hydrateProfile(state.profile);
+  emitHoneState();
+  return state.profile;
+}
+
+async function generateFromWorkspace({ profile, jd, skipPdf = false, apiKey = "" }) {
+  if (!state.user?.email) {
+    throw new ApiError("Sign in first so the resume can be saved to your job-search history.");
+  }
+  await saveProfileFromWorkspace(profile);
+  const data = new FormData();
+  const details = profile?.details || {};
+  data.set("user_email", state.user.email);
+  data.set("profile_json", JSON.stringify(profile || {}));
+  data.set("jd", jd || "");
+  data.set("name", details.name || "");
+  data.set("location", details.location || "");
+  data.set("email", details.email || "");
+  data.set("phone", details.phone || "");
+  data.set("linkedin", details.linkedin || "");
+  data.set("api_key", apiKey || "");
+  if (skipPdf) data.set("skip_pdf", "true");
+  const result = await apiFetch("/api/generate", { method: "POST", body: data }, "generating your resume");
+  await loadHistory();
+  renderPlayground({ ...result.history_item, active_version: activeVersion(result.history_item) });
+  emitHoneState();
+  return result;
+}
+
+async function openResumeFromWorkspace(runId) {
+  const item = await openPlayground(runId);
+  emitHoneState();
+  return item;
+}
+
+async function regenerateFromWorkspace({ runId, instruction = "", apiKey = "" }) {
+  const item = await apiFetch(`/api/resume/${runId}/regenerate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction, api_key: apiKey }),
+  }, "regenerating your resume");
+  await loadHistory();
+  renderPlayground({ ...item, active_version: activeVersion(item) });
+  emitHoneState();
+  return item;
+}
+
+window.HoneBridge = {
+  getState: getHoneSnapshot,
+  saveProfile: saveProfileFromWorkspace,
+  generate: generateFromWorkspace,
+  openResume: openResumeFromWorkspace,
+  activateVersion,
+  regenerate: regenerateFromWorkspace,
+  logout,
+};
 
 signinOpen?.addEventListener("click", openSignin);
 heroSignin?.addEventListener("click", openSignin);
