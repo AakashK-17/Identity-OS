@@ -244,11 +244,13 @@ def profile_has_content(profile: dict | None) -> bool:
 def playground_payload(item: dict) -> dict:
     version = active_version(item)
     run_id = item.get("id", "")
+    pdf_path = Path(version.get("pdf_path", "")) if version.get("pdf_path") else None
+    has_pdf = bool(pdf_path and pdf_path.exists())
     payload = dict(item)
     payload["active_version"] = version
     payload["docx_url"] = f"/api/download/{run_id}/docx"
-    payload["pdf_url"] = f"/api/download/{run_id}/pdf" if version.get("pdf_path") else None
-    payload["preview_url"] = f"/api/preview/{run_id}/pdf" if version.get("pdf_path") else None
+    payload["pdf_url"] = f"/api/download/{run_id}/pdf" if has_pdf else None
+    payload["preview_url"] = f"/api/preview/{run_id}/pdf" if has_pdf else None
     return payload
 
 

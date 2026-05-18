@@ -150,20 +150,25 @@ function ScorePanel({ analysis = {} }) {
 }
 
 function PreviewPanel({ item }) {
+  const previewUrl = item?.preview_url || "";
+  const docxUrl = item?.docx_url || (item ? `/api/download/${item.id}/docx` : "");
+  const pdfUrl = item?.pdf_url || "";
   return (
     <div className="preview-wrap">
       <div className="preview-toolbar">
         <div className="meta"><span>Resume preview</span></div>
         <div className="actions">
-          <a className="btn small ink" href={item ? `/api/download/${item.id}/docx` : "#"}><Icon.Download/> DOCX</a>
-          <a className="btn small ghost" href={item ? `/api/download/${item.id}/pdf` : "#"}><Icon.Download/> PDF</a>
+          <a className="btn small ink" href={docxUrl || "#"}><Icon.Download/> DOCX</a>
+          {pdfUrl && <a className="btn small ghost" href={pdfUrl}><Icon.Download/> PDF</a>}
         </div>
       </div>
       <div className="preview-stage">
-        {item ? (
-          <iframe className="paper pdf-paper" title="Generated resume preview" src={`/api/preview/${item.id}/pdf`}></iframe>
+        {previewUrl ? (
+          <iframe className="paper pdf-paper" title="Generated resume preview" src={previewUrl}></iframe>
         ) : (
-          <div className="paper empty-paper">Generate a resume to preview it here.</div>
+          <div className="paper empty-paper">
+            {item ? "This version has no PDF preview yet. Download the DOCX or regenerate with PDF enabled." : "Generate a resume to preview it here."}
+          </div>
         )}
       </div>
     </div>
