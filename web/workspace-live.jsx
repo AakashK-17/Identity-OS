@@ -160,6 +160,7 @@ function PreviewPanel({ item }) {
         <div className="actions">
           <a className="btn small ink" href={docxUrl || "#"}><Icon.Download/> DOCX</a>
           {pdfUrl && <a className="btn small ghost" href={pdfUrl}><Icon.Download/> PDF</a>}
+          {previewUrl && <a className="btn small ghost mobile-open-pdf" href={previewUrl} target="_blank" rel="noreferrer"><Icon.Share/> Open PDF</a>}
         </div>
       </div>
       <div className="preview-stage">

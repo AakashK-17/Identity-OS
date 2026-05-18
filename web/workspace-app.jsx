@@ -40,6 +40,16 @@ function Nav({ view, onView, onOpenDrawer, user }) {
   );
 }
 
+function MobileNav({ view, onView }) {
+  return (
+    <nav className="mobile-nav" aria-label="Workspace navigation">
+      <Tab id="workspace" view={view} onView={onView} icon={<Icon.Folder/>}>Workspace</Tab>
+      <Tab id="history" view={view} onView={onView} icon={<Icon.History/>}>History</Tab>
+      <Tab id="system" view={view} onView={onView} icon={<Icon.System/>}>System</Tab>
+    </nav>
+  );
+}
+
 function Tab({ id, view, onView, icon, children }) {
   const active = view === id;
   return (
@@ -82,6 +92,7 @@ function App() {
       <AmbientGlow/>
 
       <Nav view={view} onView={setView} onOpenDrawer={() => setDrawerOpen(true)} user={snapshot.user}/>
+      <MobileNav view={view} onView={setView}/>
 
       <div className="view-stack">
         <div className="view view-enter" key={view}>

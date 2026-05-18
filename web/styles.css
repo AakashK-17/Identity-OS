@@ -2915,3 +2915,133 @@ body,
     transform: rotate(-45deg) scaleX(1);
   }
 }
+
+@media (max-width: 760px) {
+  .topbar {
+    padding: 14px 16px;
+  }
+
+  .brand {
+    font-size: 1rem;
+  }
+
+  .ghost-button {
+    min-width: 0;
+    padding-inline: 14px;
+  }
+
+  .landing.public-only {
+    min-height: auto;
+    gap: 28px;
+    padding-top: 110px;
+    padding-bottom: 42px;
+  }
+
+  .landing.public-only .landing-copy h1 {
+    max-width: 9ch;
+    font-size: clamp(2.7rem, 12vw, 4rem);
+    line-height: 0.96;
+  }
+
+  .landing.public-only .lede,
+  #system-preview .system-head > p {
+    font-size: 1rem;
+  }
+
+  .hero-actions,
+  .meta-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .edge-stage {
+    min-height: 300px;
+    overflow: hidden;
+  }
+
+  .edge-stage .chip {
+    font-size: 0.72rem;
+    padding-inline: 10px;
+  }
+
+  .edge-stage .chip-1 {
+    left: 8px;
+  }
+
+  .edge-stage .chip-2 {
+    right: 8px;
+  }
+
+  .public-block {
+    padding-inline: 16px;
+    padding-block: 44px;
+  }
+
+  .public-block .sec-head,
+  #system-preview .system-head {
+    margin-bottom: 24px;
+    gap: 16px;
+  }
+
+  .public-block .sec-head h2,
+  #system-preview .system-head h2,
+  .cta-banner h2 {
+    font-size: clamp(2rem, 9vw, 2.8rem);
+    line-height: 0.98;
+  }
+
+  .public-block .features.system-grid,
+  .public-block .steps,
+  .format-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .system-grid .feature-card {
+    min-height: 0;
+    padding: 18px;
+  }
+
+  .jd-mock,
+  .rewrite-mock,
+  .history-mock {
+    font-size: 0.78rem;
+  }
+
+  .cta-banner {
+    padding: 22px;
+    min-height: 0;
+  }
+
+  .onboard-card {
+    width: calc(100vw - 20px);
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .onboard-side {
+    padding: 18px;
+  }
+
+  .onboard-steps {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .onboard-steps li {
+    font-size: 0;
+  }
+
+  .onboard-main {
+    padding: 20px 18px;
+  }
+
+  .or-rule {
+    margin-block: 16px;
+  }
+
+  .onboard-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    gap: 12px;
+  }
+}
