@@ -193,6 +193,32 @@ a { color: inherit; text-decoration: none; }
 }
 .user-chip:hover .out { color: var(--ink); }
 
+.logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(14,14,12,0.14);
+  background: var(--ink);
+  color: var(--cream);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  box-shadow: 0 10px 24px -18px rgba(14,14,12,0.65);
+  transition: transform 180ms var(--ease), background 180ms var(--ease), box-shadow 180ms var(--ease);
+}
+.logout-btn:hover {
+  transform: translateY(-1px);
+  background: var(--ink-3);
+  box-shadow: 0 14px 28px -20px rgba(14,14,12,0.75);
+}
+.logout-btn:focus-visible {
+  outline: 2px solid var(--spark);
+  outline-offset: 2px;
+}
+
 /* ──────────── View shell ──────────── */
 .view-stack {
   position: relative;
@@ -1655,12 +1681,17 @@ a { color: inherit; text-decoration: none; }
   }
 
   .user-chip {
-    padding-right: 10px;
+    padding: 4px;
   }
 
-  .user-chip .out {
-    margin-left: 0;
-    padding-left: 8px;
+  .logout-btn {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  .logout-btn span {
+    display: none;
   }
 
   .mobile-nav {

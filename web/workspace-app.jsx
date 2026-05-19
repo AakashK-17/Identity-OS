@@ -41,8 +41,11 @@ function Nav({ view, onView, onOpenDrawer, user }) {
         <div className="user-chip">
           <div className="av">{initial}</div>
           <span className="nm">{firstName}</span>
-          <button className="out" onClick={() => window.HoneBridge?.logout?.()}>Log out</button>
         </div>
+        <button className="logout-btn" onClick={() => window.HoneBridge?.logout?.()} title="Log out">
+          <Icon.LogOut/>
+          <span>Log out</span>
+        </button>
       </div>
     </nav>
   );
