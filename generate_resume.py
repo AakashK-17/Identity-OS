@@ -64,53 +64,222 @@ def safe_filename(value: str, fallback: str, max_len: int = 80) -> str:
     return value[:max_len].strip(" .") or fallback
 
 
+TITLE_KEYWORDS = [
+    "accountant", "administrator", "advisor", "analyst", "architect", "associate", "consultant",
+    "coordinator", "developer", "director", "engineer", "lead", "manager", "officer", "planner",
+    "product manager", "program manager", "researcher", "scientist", "specialist", "strategist",
+    "technician", "writer",
+]
+COMPANY_SUFFIX_PATTERN = (
+    r"LLC|L\.L\.C\.|Inc\.?|Incorporated|Corporation|Corp\.?|Company|Co\.|Technologies|Technology|"
+    r"Consulting|Agriscience|Health|Healthcare|University|College|Labs|Group|Bank|Capital|Global|"
+    r"Systems|Solutions|Partners|Ventures|Media|Studios|Hospital|Clinic"
+)
+BAD_METADATA_PATTERNS = [
+    r"school alumni from",
+    r"people also viewed",
+    r"promoted by",
+    r"application (?:viewed|submitted|status)",
+    r"take the next step",
+    r"practice an interview",
+    r"about the job",
+    r"about the company",
+    r"knowledge[, ]+skills",
+    r"responsibilit(?:y|ies)",
+    r"qualification",
+    r"benefit",
+    r"compensation",
+    r"pay range",
+    r"salary",
+    r"equal opportunity",
+    r"privacy",
+    r"physical requirements",
+    r"schedule",
+    r"shift",
+    r"address",
+    r"city:",
+    r"state:",
+    r"postal code",
+    r"remote|hybrid|onsite",
+    r"full[- ]time|part[- ]time",
+    r"over \d+ applicants",
+    r"^[a-z][a-z .'-]+,\s*[a-z]{2}(?:\b|$)",
+]
+LINKEDIN_SEPARATOR_PATTERN = r"\s+(?:\||\?|\ufffd|\u00b7|\u2022)\s+"
+
+
+def clean_metadata_value(value: str, max_len: int = 90) -> str:
+    value = re.sub(r"\s+", " ", value or "").strip(" \t\r\n:,-|")
+    value = re.sub(r"^(?:for|at|with)\s+", "", value, flags=re.IGNORECASE).strip()
+    value = re.sub(r"\s+(?:required|preferred|not mandatory)$", "", value, flags=re.IGNORECASE).strip()
+    return value[:max_len].strip(" .,-")
+
+
+def clean_role_value(value: str) -> str:
+    value = clean_metadata_value(value)
+    value = re.sub(r"^(?:an?\s+|the\s+)?(?:highly skilled\s+|experienced\s+)?", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+(?:to|who|for|within|on)\s+.+$", "", value, flags=re.IGNORECASE).strip()
+    return clean_metadata_value(value)
+
+
+def metadata_lines(jd_text: str) -> list[str]:
+    lines = []
+    for raw in (jd_text or "").splitlines():
+        line = clean_metadata_value(raw, max_len=180)
+        if line:
+            lines.append(line)
+    return lines
+
+
+def is_bad_metadata_line(line: str) -> bool:
+    lower = (line or "").lower()
+    if not lower or lower in {"role", "company", "job", "title", "description", "overview"}:
+        return True
+    return any(re.search(pattern, lower) for pattern in BAD_METADATA_PATTERNS)
+
+
+def has_title_keyword(value: str) -> bool:
+    lower = (value or "").lower()
+    return any(re.search(rf"\b{re.escape(keyword)}s?\b", lower) for keyword in TITLE_KEYWORDS)
+
+
+def is_probable_role(value: str) -> bool:
+    lower = (value or "").lower()
+    words = value.split()
+    return (
+        1 < len(words) <= 12
+        and not re.search(LINKEDIN_SEPARATOR_PATTERN, value)
+        and has_title_keyword(lower)
+        and not is_bad_metadata_line(value)
+    )
+
+
+def is_probable_company(value: str) -> bool:
+    cleaned = clean_metadata_value(value)
+    lower = cleaned.lower()
+    words = cleaned.split()
+    if not cleaned or is_bad_metadata_line(cleaned) or len(words) > 10:
+        return False
+    if re.search(rf"\b(?:{COMPANY_SUFFIX_PATTERN})\b", cleaned, re.IGNORECASE):
+        return True
+    if re.search(r"\b[A-Z][A-Za-z]+(?:\.[A-Za-z]+)?\b", cleaned) and len(words) <= 5:
+        return not any(keyword in lower for keyword in TITLE_KEYWORDS)
+    return False
+
+
+def labeled_metadata_value(lines: list[str], labels: list[str]) -> tuple[str, str] | None:
+    label_pattern = "|".join(re.escape(label) for label in labels)
+    for line in lines[:80]:
+        match = re.match(rf"^\s*(?:{label_pattern})\s*[:\-]\s*(.+)$", line, re.IGNORECASE)
+        if match:
+            value = clean_metadata_value(match.group(1))
+            if value and not is_bad_metadata_line(value):
+                return value, f"label:{match.group(0).split(':', 1)[0].strip()}"
+    return None
+
+
+def linked_in_metadata(lines: list[str]) -> tuple[str, str] | None:
+    for line in lines[:30]:
+        if is_bad_metadata_line(line):
+            continue
+        parts = [clean_metadata_value(part) for part in re.split(LINKEDIN_SEPARATOR_PATTERN, line) if clean_metadata_value(part)]
+        if len(parts) >= 2 and is_probable_role(parts[0]) and is_probable_company(parts[1]):
+            return parts[0], parts[1]
+    return None
+
+
+def extract_role_from_text(jd_text: str, lines: list[str]) -> tuple[str, str] | None:
+    labeled = labeled_metadata_value(lines, ["job title", "title", "role", "position", "job"])
+    if labeled and is_probable_role(labeled[0]):
+        return clean_role_value(labeled[0]), labeled[1]
+
+    linkedin = linked_in_metadata(lines)
+    if linkedin:
+        return linkedin[0], "linkedin-style"
+
+    top_lines = [line for line in lines[:25] if not is_bad_metadata_line(line)]
+    for line in top_lines:
+        if is_probable_role(line):
+            return clean_role_value(re.sub(r"^(?:job title|title|role|position)\s*[:\-]\s*", "", line, flags=re.IGNORECASE)), "top-line"
+
+    phrase_patterns = [
+        r"\b(?:seeking|hiring|looking for|recruiting)\s+(?:an?\s+|the\s+)?(?:highly skilled\s+|experienced\s+)?([A-Z][A-Za-z0-9/&,+#.\- ]{2,90}?(?:%s)[A-Za-z0-9/&,+#.\- ]{0,60})(?:\s+to\b|\s+who\b|\.|,|\n)" % "|".join(TITLE_KEYWORDS),
+        r"\bjoin (?:our|the)\s+.+?\s+as\s+(?:an?\s+)?([A-Z][A-Za-z0-9/&,+#.\- ]{2,90}?(?:%s)[A-Za-z0-9/&,+#.\- ]{0,60})(?:\.|,|\n)" % "|".join(TITLE_KEYWORDS),
+    ]
+    for pattern in phrase_patterns:
+        match = re.search(pattern, jd_text, re.IGNORECASE)
+        if match:
+            role = clean_role_value(match.group(1))
+            if is_probable_role(role):
+                return role, "role-phrase"
+
+    return None
+
+
+def extract_company_from_text(jd_text: str, lines: list[str]) -> tuple[str, str] | None:
+    labeled = labeled_metadata_value(lines, ["company", "organization", "employer", "client"])
+    if labeled and is_probable_company(labeled[0]):
+        return labeled
+
+    logo_match = re.search(r"company logo for,?\s*([^\n\r.]+)", jd_text, re.IGNORECASE)
+    if logo_match:
+        company = clean_metadata_value(logo_match.group(1))
+        if is_probable_company(company):
+            return company, "company-logo"
+
+    linkedin = linked_in_metadata(lines)
+    if linkedin:
+        return linkedin[1], "linkedin-style"
+
+    company_patterns = [
+        r"\b(?:Joining|At)\s+([A-Z][A-Za-z&.'+\- ]{2,70})\s+is\b",
+        r"\b([A-Z][A-Za-z&.'+\- ]{2,70}?(?:%s))\s+is\s+(?:a|an|the)\b" % COMPANY_SUFFIX_PATTERN,
+        r"\b([A-Z][A-Za-z&.'+\- ]{2,70}?(?:%s))\s+(?:is seeking|is hiring|invites applications|seeks)\b" % COMPANY_SUFFIX_PATTERN,
+        r"\bThrough its division\s+([A-Z][A-Za-z&.'+\- ]{2,70})\b",
+    ]
+    for pattern in company_patterns:
+        match = re.search(pattern, jd_text, re.IGNORECASE)
+        if match:
+            company = clean_metadata_value(match.group(1))
+            if is_probable_company(company):
+                return company, "company-phrase"
+
+    for line in lines[:20]:
+        if is_probable_company(line):
+            return clean_metadata_value(line), "top-line"
+
+    return None
+
+
+def extract_job_metadata(jd_text: str) -> dict:
+    lines = metadata_lines(jd_text)
+    role_result = extract_role_from_text(jd_text, lines)
+    company_result = extract_company_from_text(jd_text, lines)
+
+    role_display = role_result[0] if role_result else "Target Role"
+    company_display = company_result[0] if company_result else "Unknown Company"
+    confidence = 0
+    if company_result:
+        confidence += 50
+    if role_result:
+        confidence += 50
+
+    return {
+        "company_display": company_display,
+        "role_display": role_display,
+        "company_filename": safe_filename(company_display, "Unknown Company"),
+        "role_filename": safe_filename(role_display, "Target Role"),
+        "metadata_confidence": confidence,
+        "metadata_source": {
+            "company": company_result[1] if company_result else "fallback",
+            "role": role_result[1] if role_result else "fallback",
+        },
+    }
+
+
 def extract_company_role(jd_text: str) -> tuple[str, str]:
-    company_match = re.search(r"^\s*Company\s*:\s*(.+)$", jd_text, re.IGNORECASE | re.MULTILINE)
-    role_match = re.search(r"^\s*Role\s*:\s*(.+)$", jd_text, re.IGNORECASE | re.MULTILINE)
-
-    company = company_match.group(1).strip() if company_match else "Company"
-    role = role_match.group(1).strip() if role_match else "Role"
-    lines = [line.strip() for line in jd_text.splitlines() if line.strip()]
-
-    if company == "Company":
-        company_patterns = [
-            r"\b([A-Z][A-Za-z&.\- ]+(?:LLC|Inc\.?|Corporation|Corp\.?|Company|Technologies|Consulting|Agriscience|Health|University|Labs|Group|Bank|Capital))\b",
-            r"\b([A-Z][A-Za-z&.\- ]{2,50})\s+(?:invites applications|is looking|is seeking)\b",
-            r"\b([A-Z][A-Za-z&.\- ]{2,50})\s+is\s+(?:a|an)\b",
-        ]
-        for line in lines[:40]:
-            lower = line.lower()
-            if any(skip in lower for skip in ["apply now", "share this job", "benefits", "salary range"]):
-                continue
-            for pattern in company_patterns:
-                match = re.search(pattern, line)
-                if match:
-                    company = match.group(1).strip(" .,-")
-                    break
-            if company != "Company":
-                break
-
-        if company == "Company":
-            for known in ["Deloitte", "Corteva Agriscience", "RK Infotech LLC"]:
-                if known.lower() in jd_text.lower():
-                    company = known
-                    break
-
-    if role == "Role":
-        title_keywords = ["scientist", "analyst", "engineer", "consultant", "developer", "architect", "manager", "specialist", "researcher"]
-        for line in lines[:15]:
-            lower = line.lower()
-            if 2 <= len(line.split()) <= 8 and any(keyword in lower for keyword in title_keywords):
-                role = re.sub(r"^\s*Job Title\s*:\s*", "", line, flags=re.IGNORECASE).strip()
-                break
-
-    if role == "Role":
-        for title in ["Data Scientist", "Data Science Consultant", "Data Analyst", "Research Analyst", "Statistics Research Scientist", "Machine Learning Engineer"]:
-            if re.search(rf"\b{re.escape(title)}\b", jd_text, re.IGNORECASE):
-                role = title
-                break
-
-    return company, role
+    metadata = extract_job_metadata(jd_text)
+    return metadata["company_display"], metadata["role_display"]
 
 
 def extract_json(text: str) -> dict:
@@ -1310,10 +1479,12 @@ def generate_resume_from_jd(
 
     data = call_llm(base_resume_text, jd_text, model, api_key=api_key)
 
-    company_raw, role_raw = extract_company_role(jd_text)
-    company = safe_filename(company_raw, "Company")
-    role = safe_filename(role_raw, "Role")
-    output_dir = output_root / company
+    metadata = extract_job_metadata(jd_text)
+    company = metadata["company_display"]
+    role = metadata["role_display"]
+    company_filename = metadata["company_filename"]
+    role_filename = metadata["role_filename"]
+    output_dir = output_root / company_filename
     output_dir.mkdir(parents=True, exist_ok=True)
 
     update_contact_details(doc, details or {})
@@ -1324,7 +1495,7 @@ def generate_resume_from_jd(
         missing = []
 
     candidate_name = safe_filename((details or {}).get("name", ""), "Resume", max_len=60)
-    docx_path = output_dir / f"{candidate_name}_{role}.docx"
+    docx_path = output_dir / f"{candidate_name}_{role_filename}.docx"
     doc.save(str(docx_path))
 
     pdf_path = None
@@ -1334,6 +1505,9 @@ def generate_resume_from_jd(
     return {
         "company": company,
         "role": role,
+        "company_filename": company_filename,
+        "role_filename": role_filename,
+        "metadata": metadata,
         "output_dir": str(output_dir),
         "docx_path": str(docx_path),
         "pdf_path": str(pdf_path) if pdf_path else None,

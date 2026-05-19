@@ -1384,6 +1384,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "structured_resume": result["structured_resume"],
             "profile": profile_for_analysis,
             "jd_intelligence": jd_intelligence,
+            "metadata": result.get("metadata", {}),
             "api_key_available": bool(api_key or os.environ.get("OPENAI_API_KEY")),
             "skip_pdf": skip_pdf,
             "versions": [version],
@@ -1405,6 +1406,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "structured_resume": result["structured_resume"],
             "analysis": analysis,
             "keyword_gaps": keyword_gaps,
+            "metadata": result.get("metadata", {}),
         }
         return response
 
