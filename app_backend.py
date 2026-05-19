@@ -57,7 +57,7 @@ DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESULTS: dict[str, dict] = {}
-JD_INTELLIGENCE_VERSION = 5
+JD_INTELLIGENCE_VERSION = 6
 BUILD_COMMIT = os.environ.get("RENDER_GIT_COMMIT", "")
 BUILD_TIMESTAMP = os.environ.get("RENDER_DEPLOYED_AT", "")
 
@@ -273,7 +273,7 @@ SECTION_WEIGHTS = {
 
 def cluster_for_signal(term: str, category: str) -> str:
     lower = term.lower()
-    if any(token in lower for token in ["campaign", "segmentation", "marketing", "google analytics", "paid media", "seo"]):
+    if any(token in lower for token in ["campaign", "segmentation", "marketing", "market research", "competitive intelligence", "business analytics", "google analytics", "paid media", "seo"]):
         return "marketing analytics"
     if any(token in lower for token in ["aws", "azure", "snowflake", "databricks", "airflow", "dbt", "docker", "kubernetes", "distributed"]):
         return "cloud data"
@@ -281,8 +281,10 @@ def cluster_for_signal(term: str, category: str) -> str:
         return "machine learning"
     if any(token in lower for token in ["roadmap", "backlog", "agile", "scrum", "requirements", "b2b saas", "payments"]):
         return "product delivery"
-    if any(token in lower for token in ["hipaa", "irb", "clinical", "patient", "healthcare", "redcap"]):
-        return "clinical operations"
+    if any(token in lower for token in ["hipaa", "irb", "clinical", "patient", "healthcare", "redcap", "hospital", "service line"]):
+        return "healthcare strategy"
+    if any(token in lower for token in ["due diligence", "acquisition", "divestiture", "valuation"]):
+        return "corporate development"
     if any(token in lower for token in ["gaap", "sox", "financial", "budget", "variance", "forecast", "oracle", "netsuite", "quickbooks"]):
         return "financial analysis"
     if category == "stakeholder_scope":
@@ -353,6 +355,10 @@ JD_SIGNAL_CATALOG = {
         ("distributed training", [r"\bdistributed training\b"]),
         ("large-scale data processing", [r"\blarge[- ]scale data processing\b"]),
         ("simulation platforms", [r"\bsimulation platforms?\b"]),
+        ("business intelligence", [r"\bbusiness intelligence\b", r"\bbi\b"]),
+        ("analytics tools", [r"\banalytics tools?\b"]),
+        ("healthcare industry databases", [r"\bhealthcare industry databases?\b"]),
+        ("Minitab", [r"\bminitab\b"]),
     ],
     "functional_work": [
         ("model training", [r"\bmodel training\b", r"\btraining\b"]),
@@ -388,6 +394,20 @@ JD_SIGNAL_CATALOG = {
         ("budgeting", [r"\bbudgeting\b", r"\bbudget management\b"]),
         ("variance analysis", [r"\bvariance analysis\b"]),
         ("financial reporting", [r"\bfinancial reporting\b"]),
+        ("actionable insights", [r"\bactionable insights?\b"]),
+        ("market analysis", [r"\bmarket analysis\b"]),
+        ("competitive intelligence", [r"\bcompetitive intelligence\b"]),
+        ("business analytics", [r"\bbusiness analytics\b"]),
+        ("due diligence", [r"\bdue diligence\b"]),
+        ("valuation", [r"\bvaluation\b"]),
+        ("acquisitions", [r"\bacquisitions?\b", r"\bmergers?\b"]),
+        ("divestitures", [r"\bdivestitures?\b"]),
+        ("end-user reports", [r"\bend[- ]user reports?\b"]),
+        ("planning research", [r"\bplanning research\b"]),
+        ("narrative and statistical reports", [r"\bnarrative and statistical reports?\b", r"\bstatistical reports?\b"]),
+        ("finance data reconciliation", [r"\bfinance data\b.*\breconciliation", r"\breconciliations?\b.*\bfinance data\b"]),
+        ("database maintenance", [r"\bmaintains? internal and external databases?\b", r"\bmaintain.*databases?\b"]),
+        ("quality information", [r"\bquality information\b"]),
     ],
     "methods_frameworks": [
         ("reinforcement learning", [r"\breinforcement learning\b", r"\bstrong rl\b"]),
@@ -409,6 +429,26 @@ JD_SIGNAL_CATALOG = {
         ("A/B testing", [r"\ba/b testing\b", r"\bab testing\b"]),
         ("forecasting", [r"\bforecasting\b"]),
         ("quality assurance", [r"\bquality assurance\b", r"\bqa\b"]),
+        ("data integrity", [r"\bdata integrity\b"]),
+        ("statistical modeling", [r"\bstatistical modeling\b", r"\badvanced statistical modeling\b"]),
+        ("statistical programming", [r"\bstatistical programming\b"]),
+        ("statistical analysis", [r"\bstatistical analysis\b"]),
+        ("statistical visualization", [r"\bstatistical visualization\b"]),
+        ("machine learning", [r"\bmachine learning\b"]),
+        ("data mining", [r"\bdata mining\b"]),
+        ("econometrics", [r"\beconometrics\b"]),
+        ("data forecasting", [r"\bdata forecasting\b"]),
+        ("quantitative data methodologies", [r"\bquantitative data methodologies\b"]),
+        ("qualitative research", [r"\bqualitative research\b"]),
+        ("contextual inquiry", [r"\bcontextual inquiry\b"]),
+        ("individual interviews", [r"\bindividual interviews?\b"]),
+        ("group sessions", [r"\bgroup sessions?\b"]),
+        ("qualitative survey", [r"\bqualitative survey\b"]),
+        ("secondary research", [r"\bsecondary research\b"]),
+        ("ethnography", [r"\bethnograph(?:y|ic)\b"]),
+        ("market research frameworks", [r"\bmarket research frameworks?\b"]),
+        ("survey techniques", [r"\bsurvey techniques?\b"]),
+        ("research methodology", [r"\bresearch methodology\b"]),
         ("regulatory compliance", [r"\bregulatory compliance\b", r"\bcompliance\b"]),
         ("IRB protocols", [r"\birb protocols?\b", r"\binstitutional review board\b"]),
         ("HIPAA", [r"\bhipaa\b"]),
@@ -436,6 +476,11 @@ JD_SIGNAL_CATALOG = {
         ("viewer engagement", [r"\bviewer engagement\b"]),
         ("session duration", [r"\bsession duration\b"]),
         ("healthcare compliance", [r"\bhealthcare compliance\b", r"\bhipaa\b"]),
+        ("healthcare facilities", [r"\bhealthcare facilities\b"]),
+        ("healthcare facility planning", [r"\bhealthcare facilit(?:y|ies)\b.*\bplanning\b"]),
+        ("service line institutes", [r"\bservice line institutes?\b"]),
+        ("business development", [r"\bbusiness development\b"]),
+        ("healthcare strategy", [r"\bhealthcare\b.*\b(strategy|planning|decision making)\b"]),
         ("clinical research", [r"\bclinical research\b"]),
         ("patient data", [r"\bpatient data\b"]),
         ("supply chain", [r"\bsupply chain\b"]),
@@ -455,6 +500,12 @@ JD_SIGNAL_CATALOG = {
         ("stakeholder alignment", [r"\binfluencing stakeholders\b", r"\baligning teams\b"]),
         ("communication of trade-offs", [r"\bcomplex trade[- ]offs\b"]),
         ("executive reporting", [r"\bexecutive reporting\b"]),
+        ("senior administration", [r"\bsenior administration\b"]),
+        ("senior leadership", [r"\bsenior leadership\b", r"\bleadership\b"]),
+        ("leadership presentations", [r"\bpresents? analysis and recommendations?\b.*\bleadership\b", r"\bpresent information\b", r"\bcommunicate results\b"]),
+        ("Business Development stakeholders", [r"\bbusiness development\b"]),
+        ("Marketing stakeholders", [r"\bmarketing\b"]),
+        ("senior executives", [r"\bsenior executives?\b"]),
         ("vendor management", [r"\bvendor management\b", r"\bvendor relationships?\b"]),
         ("client-facing communication", [r"\bclient[- ]facing\b"]),
     ],
@@ -466,17 +517,23 @@ JD_SIGNAL_CATALOG = {
         ("evaluation rigor", [r"\bevaluation rigor\b"]),
         ("3+ years ML production experience", [r"\b3\+ years\b.*\bml\b"]),
         ("M.S. or Ph.D.", [r"\bm\.s\.\b", r"\bph\.d\.\b"]),
+        ("5+ years quantitative experience", [r"\b5\+ experience\b", r"\b5\+\s+years\b.*\bquantitative\b"]),
+        ("supervisor experience", [r"\bsupervisor experience\b", r"\bmanage a team\b"]),
+        ("mentoring analysts", [r"\bmentor\b.*\banalysts?\b", r"\bcoach\b.*\banalysts?\b", r"\btrains? and provides direction\b"]),
+        ("workload prioritization", [r"\bworkload prioritization\b", r"\bprioritize workloads\b"]),
+        ("project management", [r"\bmanage numerous processes\b", r"\bprojects simultaneously\b", r"\bdefined project goals\b"]),
+        ("strategic thinking", [r"\bthink and act strategically\b", r"\bstrategically\b"]),
     ],
 }
 
 
 SECTION_MAP = {
     "about_role": {"about the role", "about this role", "role overview", "the role", "about the job", "job summary", "position summary"},
-    "about_company": {"description", "company", "overview", "who we are", "about the company", "about us", "our company"},
-    "responsibilities": {"responsibility", "responsibilities", "what you'll do", "what you will do", "role responsibilities", "duties", "essential functions"},
-    "requirements": {"requirements", "required", "required skills", "qualifications", "minimum qualifications", "what you bring", "basic qualifications"},
-    "preferred": {"preferred", "preferred skills", "nice to have", "preferred qualifications", "desired qualifications"},
-    "benefits_compensation": {"compensation", "benefits", "base salary", "salary", "privacy", "equal opportunity", "eeo", "perks", "additional information", "time type", "employee type", "travel", "relocation eligible"},
+    "about_company": {"description", "company", "overview", "who we are", "about the company", "about us", "our company", "our promise to you", "our promise"},
+    "responsibilities": {"responsibility", "responsibilities", "what you'll do", "what you will do", "role responsibilities", "duties", "essential functions", "job description", "position description"},
+    "requirements": {"requirements", "required", "required skills", "qualifications", "minimum qualifications", "what you bring", "basic qualifications", "knowledge skills and abilities", "knowledge skills abilities", "knowledge skill and abilities", "knowledge skill abilities", "education", "field of study", "work experience"},
+    "preferred": {"preferred", "preferred skills", "nice to have", "preferred qualifications", "desired qualifications", "licenses and certifications", "license and certification", "certifications"},
+    "benefits_compensation": {"compensation", "benefits", "base salary", "salary", "pay range", "privacy", "equal opportunity", "eeo", "perks", "additional information", "time type", "employee type", "travel", "relocation eligible", "physical requirements", "schedule", "shift", "address", "city", "state", "postal code", "all the benefits and perks you need for you and your family"},
 }
 
 
@@ -585,7 +642,7 @@ def is_valid_signal(term: str, category: str = "") -> bool:
         "python", "sql", "excel", "tableau", "salesforce", "hubspot", "workday", "sap", "oracle",
         "jira", "figma", "pytorch", "tensorflow", "qdrant", "gcp", "rlhf", "llm", "vlm", "dllm", "vla",
         "hipaa", "scrum", "agile", "aws", "azure", "snowflake", "databricks", "redcap", "ga4",
-        "qualtrics", "spss", "sas", "r", "matlab", "netsuite", "quickbooks", "airflow", "dbt",
+        "qualtrics", "spss", "sas", "r", "matlab", "minitab", "netsuite", "quickbooks", "airflow", "dbt",
         "docker", "kubernetes", "git", "gaap", "seo",
     }:
         return False
@@ -810,6 +867,35 @@ def signal_term(signal) -> str:
     return signal.get("term", "") if isinstance(signal, dict) else str(signal)
 
 
+def term_aliases(term: str) -> list[str]:
+    aliases = {
+        "RL-style methods": ["rl", "reinforcement learning"],
+        "reinforcement learning": ["rl"],
+        "LLM": ["large language model", "llms"],
+        "VLM": ["vision language model", "vlms"],
+        "fine-tuning": ["finetuning", "fine tuning"],
+        "model monitoring": ["monitoring"],
+        "distributed training": ["distributed model training"],
+        "business intelligence": ["bi", "business intelligence tools"],
+        "structured query language": ["sql"],
+        "SQL": ["structured query language"],
+        "data forecasting": ["forecasting"],
+        "forecasting": ["data forecasting", "forecast models", "forecast modeling"],
+        "quality assurance": ["qa", "quality review", "quality control"],
+        "healthcare facilities": ["healthcare facility planning", "healthcare facility", "healthcare planning"],
+        "senior administration": ["senior leadership", "senior executives", "executive leadership"],
+        "leadership presentations": ["presentations to leadership", "presenting to leadership", "senior leadership presentations"],
+        "finance data reconciliation": ["finance data reconciliations", "financial data reconciliation", "reconciliations"],
+        "healthcare industry databases": ["healthcare databases", "industry databases"],
+        "statistical visualization": ["data visualization", "statistical charts", "charts, graphs, and tables"],
+        "qualitative research": ["qualitative survey", "interviews", "contextual inquiry", "ethnography"],
+        "market research": ["market analysis", "research methodology", "survey techniques"],
+        "competitive intelligence": ["competitive analysis"],
+        "actionable insights": ["actionable market insights", "insights"],
+    }
+    return aliases.get(term, [])
+
+
 def contains_term(text: str, signal) -> bool:
     term = signal_term(signal)
     if not term:
@@ -818,16 +904,7 @@ def contains_term(text: str, signal) -> bool:
     normalized_term = term.lower()
     if re.search(rf"\b{re.escape(normalized_term)}\b", normalized_text):
         return True
-    aliases = {
-        "RL-style methods": ["rl", "reinforcement learning"],
-        "reinforcement learning": ["rl"],
-        "LLM": ["large language model", "llms"],
-        "VLM": ["vision language model", "vlms"],
-        "fine-tuning": ["finetuning", "fine tuning"],
-        "model monitoring": ["monitoring"],
-        "distributed training": ["distributed model training"],
-    }
-    return any(re.search(rf"\b{re.escape(alias.lower())}\b", normalized_text) for alias in aliases.get(term, []))
+    return any(re.search(rf"\b{re.escape(alias.lower())}\b", normalized_text) for alias in term_aliases(term))
 
 
 def term_occurrences(text: str, signal) -> int:
@@ -836,16 +913,7 @@ def term_occurrences(text: str, signal) -> int:
         return 0
     normalized_text = (text or "").lower()
     terms = [term]
-    aliases = {
-        "RL-style methods": ["rl", "reinforcement learning"],
-        "reinforcement learning": ["rl"],
-        "LLM": ["large language model", "llms"],
-        "VLM": ["vision language model", "vlms"],
-        "fine-tuning": ["finetuning", "fine tuning"],
-        "model monitoring": ["monitoring"],
-        "distributed training": ["distributed model training"],
-    }
-    terms.extend(aliases.get(term, []))
+    terms.extend(term_aliases(term))
     return sum(len(re.findall(rf"\b{re.escape(candidate.lower())}\b", normalized_text)) for candidate in terms)
 
 
@@ -937,7 +1005,7 @@ def build_keyword_strategy(jd_text: str, generated_data: dict, jd_intelligence: 
         section: sum(term_occurrences(text, signal) for signal in plan)
         for section, text in sections.items()
     }
-    return {
+    strategy = {
         "important_terms": plan,
         "keyword_plan": plan,
         "covered": covered,
@@ -950,6 +1018,8 @@ def build_keyword_strategy(jd_text: str, generated_data: dict, jd_intelligence: 
         "coverage_percent": coverage_percent,
         "ats_strategy_score": ats_strategy_score,
     }
+    strategy["ats_strategy_score"] = max(strategy["ats_strategy_score"], semantic_score_floor(strategy, "\n".join(sections.values())))
+    return strategy
 
 
 def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof: list[dict] | None = None, jd_intelligence: dict | None = None) -> dict:
@@ -957,12 +1027,35 @@ def build_keyword_gaps(jd_text: str, generated_data: dict, profile: dict, proof:
     return build_keyword_strategy(jd_text, generated_data, jd_intelligence=jd_intelligence)
 
 
+def semantic_score_floor(strategy: dict, resume_text: str) -> int:
+    if not strategy.get("important_terms"):
+        return 0
+    lower = (resume_text or "").lower()
+    cluster_terms = {
+        "marketing analytics": ["market", "marketing", "forecast", "competitive", "research", "analytics", "insight"],
+        "healthcare strategy": ["healthcare", "hospital", "clinical", "patient", "service line", "facility"],
+        "corporate development": ["due diligence", "valuation", "acquisition", "merger", "divestiture"],
+        "financial analysis": ["finance", "financial", "reconciliation", "forecast", "econometric", "variance"],
+        "stakeholder leadership": ["leadership", "executive", "stakeholder", "presentation", "mentor", "manager"],
+        "machine learning": ["machine learning", "model", "statistical", "data mining"],
+    }
+    plan_clusters = {item.get("semantic_cluster") for item in strategy.get("important_terms", []) if item.get("semantic_cluster")}
+    hits = 0
+    for cluster in plan_clusters:
+        tokens = cluster_terms.get(cluster, [])
+        if tokens and any(token in lower for token in tokens):
+            hits += 1
+    if not hits:
+        return 0
+    return min(45, 18 + hits * 7)
+
+
 def score_resume(jd_text: str, generated_data: dict, profile: dict, pdf_path: str | None, proof: list[dict] | None = None, jd_intelligence: dict | None = None) -> dict:
     strategy = build_keyword_strategy(jd_text, generated_data, jd_intelligence=jd_intelligence)
     resume_text = flatten_generated_text(generated_data or {})
     words = len(re.findall(r"\b[\w+#./-]+\b", resume_text))
     readability = max(55, min(96, 100 - abs(words - 620) // 10))
-    ats = strategy["ats_strategy_score"]
+    ats = max(strategy["ats_strategy_score"], semantic_score_floor(strategy, resume_text))
     proof_strength = max(60, min(100, round((strategy["coverage_percent"] * 0.65) + (ats * 0.35))))
     role_fit = max(35, min(98, round((ats * 0.75) + (proof_strength * 0.25))))
     format_quality = 95 if pdf_path else 78
