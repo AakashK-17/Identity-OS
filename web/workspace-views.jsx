@@ -154,7 +154,7 @@ function Metric({ nm, v, accent, desc, idx }) {
     return () => clearTimeout(id);
   }, [v, idx]);
   return (
-    <div className={"metric" + (accent ? " " + accent : "")}>
+    <div className={"metric" + (accent ? " " + accent : "")} style={{ "--idx": String(idx) }}>
       <div className="nm">{nm}</div>
       <div className="val"><CountUp value={v} duration={1000} delay={idx * 50}/></div>
       <div className="bar"><i style={{ width: w + '%' }}/></div>

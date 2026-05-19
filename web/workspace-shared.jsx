@@ -82,6 +82,34 @@ function CountUp({ value, duration = 1100, suffix = "", decimals = 0, delay = 0 
   return <span className="tnum">{v.toFixed(decimals)}{suffix}</span>;
 }
 
+const PROCESSING_MESSAGES = [
+  "Parsing JD...",
+  "Cross-referencing memory...",
+  "Refining bullets...",
+  "Exporting DOCX...",
+  "Preparing preview...",
+];
+
+function TerminalStatus({ active, mode = "generating", messages = PROCESSING_MESSAGES }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setIndex(0);
+      return undefined;
+    }
+    const id = setInterval(() => setIndex((value) => (value + 1) % messages.length), 1150);
+    return () => clearInterval(id);
+  }, [active, messages.length]);
+  if (!active) return null;
+  return (
+    <span className="terminal-status" aria-live="polite">
+      <span className="terminal-dot"></span>
+      <span className="terminal-mode">{mode}</span>
+      <span className="terminal-text" key={messages[index]}>{messages[index]}</span>
+    </span>
+  );
+}
+
 // ── Mouse-following ambient glow
 function AmbientGlow() {
   const ref = useRef(null);
@@ -286,4 +314,4 @@ const Icon = {
   Save: () => (<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 2.5h7l2 2v7a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.3"/><path d="M4.5 2.5v3h4v-3M4.5 9.5h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>),
 };
 
-Object.assign(window, { HoneMark, CountUp, ScoreRing, useTilt, AmbientGlow, StrikeOverlay, Icon, useHoneState });
+Object.assign(window, { HoneMark, CountUp, TerminalStatus, ScoreRing, useTilt, AmbientGlow, StrikeOverlay, Icon, useHoneState });

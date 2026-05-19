@@ -152,7 +152,7 @@ function App() {
       </div>
 
       <BaseResumeDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} snapshot={snapshot}/>
-      <StrikeOverlay show={generating}/>
+      <StrikeOverlay show={false}/>
     </React.Fragment>
   );
 }

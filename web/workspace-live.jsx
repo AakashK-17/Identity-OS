@@ -95,7 +95,7 @@ function markDraft(profile) {
   return window.HoneDraftProfile;
 }
 
-function NewApplicationHero({ onGenerate, onOpenDrawer, snapshot, busy }) {
+function NewApplicationHero({ onGenerate, onOpenDrawer, snapshot, busy, processingMode = "idle" }) {
   const [docxOnly, setDocxOnly] = React.useState(false);
   const [jd, setJd] = React.useState("");
   const [status, setStatus] = React.useState("");
@@ -114,7 +114,7 @@ function NewApplicationHero({ onGenerate, onOpenDrawer, snapshot, busy }) {
       onOpenDrawer?.();
       return;
     }
-    setStatus("Saving base resume and generating...");
+    setStatus("");
     await onGenerate?.(jd, docxOnly);
     setStatus("");
     setJd("");
@@ -149,6 +149,7 @@ function NewApplicationHero({ onGenerate, onOpenDrawer, snapshot, busy }) {
             <span className="sep">·</span>
             <span>Memory · <b>{proofCount}</b></span>
             {status && <span className="jd-status">{status}</span>}
+            <TerminalStatus active={busy} mode={processingMode === "regenerating" ? "regenerating" : "generating"}/>
           </div>
           <div className="jd-actions">
             <div className="toggle" onClick={() => setDocxOnly((value) => !value)}>
@@ -194,7 +195,15 @@ function WorkspaceHeader({ item, versions, active, onVersion }) {
   );
 }
 
-function ScorePanel({ analysis = {} }) {
+function SkeletonLines({ rows = 4 }) {
+  return (
+    <div className="skeleton-stack" aria-hidden="true">
+      {Array.from({ length: rows }).map((_, index) => <span key={index} className="skeleton-line" style={{ "--i": String(index) }}/>)}
+    </div>
+  );
+}
+
+function ScorePanel({ analysis = {}, loading = false }) {
   const ref = React.useRef(null);
   useTilt(ref, { max: 4 });
   const scores = analysis.scores || {};
@@ -207,11 +216,19 @@ function ScorePanel({ analysis = {} }) {
     ["Interview defense", scores.interview_defensibility || 0, "steel"],
   ];
   const gaps = analysis.keyword_gaps || {};
+  const hasScores = Boolean(analysis?.scores);
   return (
-    <div className="card tilt" ref={ref}>
+    <div className={"card tilt" + (loading ? " is-loading" : "")} ref={ref}>
       <div className="card-glow"></div>
       <div className="card-label"><b>Identity signal</b><span>current</span></div>
-      <div className="score-hero">
+      {loading || !hasScores ? (
+        <React.Fragment>
+          <div className="score-skeleton"><span></span><i></i></div>
+          <SkeletonLines rows={6}/>
+        </React.Fragment>
+      ) : (
+      <React.Fragment>
+        <div className="score-hero">
         <div className="score-big"><CountUp value={scores.overall_score || 0} duration={1200}/></div>
         <div className="score-meta">
           <span className="score-status"><span className="pip"></span>{(scores.overall_score || 0) >= 80 ? "Strong" : "Refining"}</span>
@@ -227,14 +244,17 @@ function ScorePanel({ analysis = {} }) {
         <div className="kw-row"><span className="lbl"><span className="pip s2"></span>Bridge keywords</span><span className="ct">{gaps.bridge_keywords?.length || 0}</span></div>
         <div className="kw-row"><span className="lbl"><span className="pip s3"></span>Weak terms</span><span className="ct">{gaps.weak_terms?.length || 0}</span></div>
       </div>
+      </React.Fragment>
+      )}
     </div>
   );
 }
 
-function PreviewPanel({ item }) {
+function PreviewPanel({ item, processingMode = "idle" }) {
   const previewUrl = item?.preview_url || "";
   const docxUrl = item?.docx_url || (item ? `/api/download/${item.id}/docx` : "");
   const pdfUrl = item?.pdf_url || "";
+  const processing = processingMode !== "idle";
   return (
     <div className="preview-wrap">
       <div className="preview-toolbar">
@@ -245,9 +265,18 @@ function PreviewPanel({ item }) {
           {previewUrl && <a className="btn small ghost mobile-open-pdf" href={previewUrl} target="_blank" rel="noreferrer"><Icon.Share/> Open PDF</a>}
         </div>
       </div>
-      <div className="preview-stage">
+      <div className={"preview-stage" + (processing ? " scanning" : "")}>
+        {processing && (
+          <div className="scan-status">
+            <TerminalStatus active={processing} mode={processingMode}/>
+          </div>
+        )}
         {previewUrl ? (
           <iframe className="paper pdf-paper" title="Generated resume preview" src={previewUrl}></iframe>
+        ) : processing ? (
+          <div className="paper preview-skeleton-paper">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
         ) : (
           <div className="paper empty-paper">
             {item ? "This version has no PDF preview yet. Download the DOCX or regenerate with PDF enabled." : "Generate a resume to preview it here."}
@@ -258,21 +287,22 @@ function PreviewPanel({ item }) {
   );
 }
 
-function PlaygroundPanel({ item, versions, active, onVersion, onRegenerate, regenerating }) {
+function PlaygroundPanel({ item, versions, active, onVersion, onRegenerate, regenerating, processingMode = "idle" }) {
   const [instruction, setInstruction] = React.useState("");
   const gaps = item?.keyword_gaps || item?.analysis?.keyword_gaps || {};
   const placed = (gaps.covered || []).map(liveSignalTerm);
   const bridge = (gaps.bridge_keywords || []).map(liveSignalTerm);
   const weak = (gaps.weak_terms || []).map(liveSignalTerm);
+  const processing = processingMode !== "idle";
   return (
     <div className="playground">
       <div className="card" style={{ padding: 20 }}>
         <div className="card-label"><b>Keyword strategy</b><span>{item ? "live" : "idle"}</span></div>
-        <div className="kw-strategy">
+        {processing && !item ? <SkeletonLines rows={5}/> : <div className="kw-strategy">
           <div><div className="collabel" style={{ marginBottom: 8 }}>Placed in resume</div><div className="kw-chip-row">{placed.map((term) => <span key={term} className="kw-chip placed">{term}</span>)}</div></div>
           <div><div className="collabel" style={{ marginBottom: 8, marginTop: 12 }}>Bridge keywords</div><div className="kw-chip-row">{bridge.map((term) => <span key={term} className="kw-chip bridge">{term}</span>)}</div></div>
           <div><div className="collabel" style={{ marginBottom: 8, marginTop: 12 }}>Weak terms</div><div className="kw-chip-row">{weak.map((term) => <span key={term} className="kw-chip weak">{term}</span>)}</div></div>
-        </div>
+        </div>}
       </div>
       <div className="card" style={{ padding: 18 }}>
         <div className="card-label"><b>Refinement request</b><span>Free-form</span></div>
@@ -289,6 +319,7 @@ function PlaygroundPanel({ item, versions, active, onVersion, onRegenerate, rege
       <div className="card" style={{ padding: 18 }}>
         <div className="card-label"><b>Version history</b><span>{versions.length}</span></div>
         <div className="timeline">
+          {processing && !versions.length && <React.Fragment><div className="tlrow skeleton-row"><span></span><i></i><b></b></div><div className="tlrow skeleton-row"><span></span><i></i><b></b></div></React.Fragment>}
           {versions.map((version) => (
             <div key={version.id} className={"tlrow" + (active === version.id ? " cur" : "")} onClick={() => onVersion(version.id)}>
               <span className="node"></span>
@@ -328,6 +359,7 @@ function WorkspaceView({ onGenerate, onOpenDrawer, onGoHistory, snapshot }) {
   const [active, setActive] = React.useState(item?.active_version_id || "");
   const [generating, setGenerating] = React.useState(false);
   const [regenerating, setRegenerating] = React.useState(false);
+  const processingMode = generating ? "generating" : regenerating ? "regenerating" : "idle";
   React.useEffect(() => setActive(item?.active_version_id || versions[versions.length - 1]?.id || ""), [item?.active_version_id, versions.length]);
 
   async function generate(jd, docxOnly) {
@@ -364,13 +396,13 @@ function WorkspaceView({ onGenerate, onOpenDrawer, onGoHistory, snapshot }) {
 
   return (
     <section>
-      <NewApplicationHero onGenerate={generate} onOpenDrawer={onOpenDrawer} snapshot={snapshot} busy={generating}/>
+      <NewApplicationHero onGenerate={generate} onOpenDrawer={onOpenDrawer} snapshot={snapshot} busy={processingMode !== "idle"} processingMode={processingMode}/>
       <div className="active-divider"><span className="pip"></span><span>Active artifact</span><span className="line"></span><span>{active ? `${active.toUpperCase()} active` : "No active artifact"}</span></div>
       <WorkspaceHeader item={item} versions={versions} active={active} onVersion={switchVersion}/>
       <div className="ws-grid">
-        <ScorePanel analysis={item?.analysis || {}}/>
-        <PreviewPanel item={item}/>
-        <PlaygroundPanel item={item} versions={versions} active={active} onVersion={switchVersion} onRegenerate={regenerate} regenerating={regenerating}/>
+        <ScorePanel analysis={item?.analysis || {}} loading={processingMode !== "idle" || !item}/>
+        <PreviewPanel item={item} processingMode={processingMode}/>
+        <PlaygroundPanel item={item} versions={versions} active={active} onVersion={switchVersion} onRegenerate={regenerate} regenerating={regenerating} processingMode={processingMode}/>
       </div>
       <RecentStrip onGoHistory={onGoHistory} items={(snapshot.history || []).slice(0, 4)}/>
     </section>
