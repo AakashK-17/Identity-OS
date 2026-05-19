@@ -68,7 +68,7 @@ TITLE_KEYWORDS = [
     "accountant", "administrator", "advisor", "analyst", "architect", "associate", "consultant",
     "coordinator", "developer", "director", "engineer", "lead", "manager", "officer", "planner",
     "product manager", "program manager", "researcher", "scientist", "specialist", "strategist",
-    "technician", "writer",
+    "technician", "writer", "designer", "marketer", "assistant", "supervisor", "executive",
 ]
 COMPANY_SUFFIX_PATTERN = (
     r"LLC|L\.L\.C\.|Inc\.?|Incorporated|Corporation|Corp\.?|Company|Co\.|Technologies|Technology|"
@@ -84,9 +84,25 @@ BAD_METADATA_PATTERNS = [
     r"practice an interview",
     r"about the job",
     r"about the company",
+    r"about this position",
+    r"position overview",
+    r"job overview",
+    r"job description",
+    r"role overview",
+    r"position summary",
+    r"job summary",
+    r"summary",
+    r"overview",
+    r"knowledge\b",
     r"knowledge[, ]+skills",
     r"responsibilit(?:y|ies)",
     r"qualification",
+    r"skills\b",
+    r"duties",
+    r"requirements",
+    r"preferred",
+    r"education",
+    r"experience",
     r"benefit",
     r"compensation",
     r"pay range",
@@ -156,15 +172,25 @@ def is_probable_role(value: str) -> bool:
 
 def is_probable_company(value: str) -> bool:
     cleaned = clean_metadata_value(value)
-    lower = cleaned.lower()
     words = cleaned.split()
     if not cleaned or is_bad_metadata_line(cleaned) or len(words) > 10:
         return False
     if re.search(rf"\b(?:{COMPANY_SUFFIX_PATTERN})\b", cleaned, re.IGNORECASE):
         return True
-    if re.search(r"\b[A-Z][A-Za-z]+(?:\.[A-Za-z]+)?\b", cleaned) and len(words) <= 5:
-        return not any(keyword in lower for keyword in TITLE_KEYWORDS)
     return False
+
+
+def is_probable_linkedin_company(value: str) -> bool:
+    cleaned = clean_metadata_value(value)
+    lower = cleaned.lower()
+    words = cleaned.split()
+    if not cleaned or is_bad_metadata_line(cleaned) or not (1 <= len(words) <= 8):
+        return False
+    if has_title_keyword(cleaned):
+        return False
+    if re.search(r"^[A-Z][A-Za-z0-9&.'+-]*(?:\s+[A-Z][A-Za-z0-9&.'+-]*){0,7}$", cleaned):
+        return True
+    return any(token in lower for token in ["health", "university", "global", "labs", "bank", "capital"])
 
 
 def labeled_metadata_value(lines: list[str], labels: list[str]) -> tuple[str, str] | None:
@@ -183,7 +209,7 @@ def linked_in_metadata(lines: list[str]) -> tuple[str, str] | None:
         if is_bad_metadata_line(line):
             continue
         parts = [clean_metadata_value(part) for part in re.split(LINKEDIN_SEPARATOR_PATTERN, line) if clean_metadata_value(part)]
-        if len(parts) >= 2 and is_probable_role(parts[0]) and is_probable_company(parts[1]):
+        if len(parts) >= 2 and is_probable_role(parts[0]) and is_probable_linkedin_company(parts[1]):
             return parts[0], parts[1]
     return None
 
@@ -197,7 +223,7 @@ def extract_role_from_text(jd_text: str, lines: list[str]) -> tuple[str, str] | 
     if linkedin:
         return linkedin[0], "linkedin-style"
 
-    top_lines = [line for line in lines[:25] if not is_bad_metadata_line(line)]
+    top_lines = [line for line in lines[:40] if not is_bad_metadata_line(line)]
     for line in top_lines:
         if is_probable_role(line):
             return clean_role_value(re.sub(r"^(?:job title|title|role|position)\s*[:\-]\s*", "", line, flags=re.IGNORECASE)), "top-line"

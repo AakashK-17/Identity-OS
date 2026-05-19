@@ -17,6 +17,7 @@ from openai import OpenAI
 from generate_resume import (
     BASE_RESUME,
     create_template_from_profile,
+    extract_job_metadata,
     flatten_generated_text,
     generate_resume_from_jd,
     make_template_from_resume,
@@ -67,6 +68,9 @@ MIME_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
     ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".png": "image/png",
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
@@ -168,9 +172,66 @@ def add_history_item(email: str, item: dict) -> None:
     save_history(data)
 
 
-def get_history_items(email: str) -> list[dict]:
+BAD_HISTORY_METADATA = {
+    "",
+    "company",
+    "role",
+    "target role",
+    "unknown company",
+    "position overview",
+    "job overview",
+    "job description",
+    "role overview",
+    "position summary",
+    "job summary",
+    "summary",
+    "overview",
+    "about the job",
+    "responsibilities",
+    "qualifications",
+    "knowledge skills and abilities",
+}
+
+
+def needs_metadata_repair(item: dict) -> bool:
+    company = str(item.get("company", "")).strip().lower()
+    role = str(item.get("role", "")).strip().lower()
+    return company in BAD_HISTORY_METADATA or role in BAD_HISTORY_METADATA
+
+
+def repair_history_metadata_item(item: dict) -> bool:
+    if not needs_metadata_repair(item) or not item.get("jd"):
+        return False
+    metadata = extract_job_metadata(item.get("jd", ""))
+    changed = False
+    company = metadata.get("company_display", "Unknown Company")
+    role = metadata.get("role_display", "Target Role")
+    if company and company != item.get("company"):
+        item["company"] = company
+        changed = True
+    if role and role != item.get("role"):
+        item["role"] = role
+        changed = True
+    if changed:
+        item["metadata"] = metadata
+    return changed
+
+
+def repair_history_metadata_for_user(email: str) -> list[dict]:
+    key = user_key(email)
     data = load_history()
-    return data.get("users", {}).get(user_key(email), {}).get("items", [])
+    record = data.get("users", {}).get(key, {})
+    items = record.get("items", [])
+    changed = False
+    for item in items:
+        changed = repair_history_metadata_item(item) or changed
+    if changed:
+        save_history(data)
+    return items
+
+
+def get_history_items(email: str) -> list[dict]:
+    return repair_history_metadata_for_user(email)
 
 
 def find_history_item(run_id: str) -> dict | None:
@@ -178,6 +239,8 @@ def find_history_item(run_id: str) -> dict | None:
     for record in data.get("users", {}).values():
         for item in record.get("items", []):
             if item.get("id") == run_id:
+                if repair_history_metadata_item(item):
+                    save_history(data)
                 return item
     return None
 
