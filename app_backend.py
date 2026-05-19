@@ -238,7 +238,7 @@ def normalize_resume_item(item: dict) -> dict:
 def profile_has_content(profile: dict | None) -> bool:
     if not isinstance(profile, dict):
         return False
-    return any(bool(profile.get(key)) for key in ["details", "experience", "projects", "education", "certifications", "skills"])
+    return any(bool(profile.get(key)) for key in ["details", "experiences", "experience", "projects", "education", "certifications", "skills"])
 
 
 def playground_payload(item: dict) -> dict:

@@ -2,6 +2,14 @@
 
 const { useState: uS, useEffect: uE } = React;
 
+const primaryTabs = [
+  ["workspace", "Workspace", <Icon.Folder/>, "W"],
+  ["history", "History", <Icon.History/>, "H"],
+  ["profile", "Profile", <Icon.Save/>, "P"],
+  ["settings", "Settings", <Icon.System/>, "G"],
+  ["system", "System", <Icon.System/>, "S"],
+];
+
 function Nav({ view, onView, onOpenDrawer, user }) {
   const displayName = user?.name || user?.email || "Workspace";
   const firstName = displayName.split(" ")[0];
@@ -14,9 +22,9 @@ function Nav({ view, onView, onOpenDrawer, user }) {
           <span className="nav-name">Hone<span className="dot">.</span></span>
         </div>
         <div className="nav-tabs">
-          <Tab id="workspace" view={view} onView={onView} icon={<Icon.Folder/>}>Workspace<span className="kbd">W</span></Tab>
-          <Tab id="history"   view={view} onView={onView} icon={<Icon.History/>}>History<span className="kbd">H</span></Tab>
-          <Tab id="system"    view={view} onView={onView} icon={<Icon.System/>}>System<span className="kbd">S</span></Tab>
+          {primaryTabs.map(([id, label, icon, key]) => (
+            <Tab key={id} id={id} view={view} onView={onView} icon={icon}>{label}<span className="kbd">{key}</span></Tab>
+          ))}
         </div>
       </div>
       <div className="nav-r">
@@ -45,6 +53,7 @@ function MobileNav({ view, onView }) {
     <nav className="mobile-nav" aria-label="Workspace navigation">
       <Tab id="workspace" view={view} onView={onView} icon={<Icon.Folder/>}>Workspace</Tab>
       <Tab id="history" view={view} onView={onView} icon={<Icon.History/>}>History</Tab>
+      <Tab id="profile" view={view} onView={onView} icon={<Icon.Save/>}>Profile</Tab>
       <Tab id="system" view={view} onView={onView} icon={<Icon.System/>}>System</Tab>
     </nav>
   );
@@ -66,6 +75,7 @@ function App() {
   const [view, setView] = uS('workspace');
   const [generating, setGenerating] = uS(false);
   const [drawerOpen, setDrawerOpen] = uS(false);
+  const [promptedSetup, setPromptedSetup] = uS(false);
   const snapshot = useHoneState();
 
   uE(() => {
@@ -74,11 +84,35 @@ function App() {
       if (e.key === 'w' || e.key === 'W') setView('workspace');
       if (e.key === 'h' || e.key === 'H') setView('history');
       if (e.key === 's' || e.key === 'S') setView('system');
+      if (e.key === 'p' || e.key === 'P') setView('profile');
+      if (e.key === 'g' || e.key === 'G') setView('settings');
       if (e.key === 'b' || e.key === 'B') setDrawerOpen(true);
     };
+    const onRoute = (event) => setView(event.detail || "workspace");
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('hone:view', onRoute);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('hone:view', onRoute);
+    };
   }, []);
+
+  uE(() => {
+    if (!snapshot.user || promptedSetup || snapshot.profile == null) return;
+    const profile = snapshot.profile || {};
+    const hasMemory = Boolean(
+      profile.onboarding_complete ||
+      profile.experiences?.length ||
+      profile.projects?.length ||
+      profile.education?.length ||
+      profile.certifications?.length ||
+      String(profile.skills || "").trim()
+    );
+    if (!hasMemory) {
+      setDrawerOpen(true);
+      setPromptedSetup(true);
+    }
+  }, [snapshot.user?.email, snapshot.profile, promptedSetup]);
 
   function trigger() {
     setGenerating(true);
@@ -105,6 +139,11 @@ function App() {
             />
           )}
           {view === 'history' && <HistoryView snapshot={snapshot} onOpenResume={() => setView('workspace')}/>}
+          {view === 'profile' && <ProfileView snapshot={snapshot} onOpenDrawer={() => setDrawerOpen(true)}/>}
+          {view === 'settings' && <SettingsView snapshot={snapshot}/>}
+          {view === 'about' && <AboutView/>}
+          {view === 'privacy' && <PrivacyView/>}
+          {view === 'terms' && <TermsView/>}
           {view === 'system'  && <SystemView/>}
         </div>
       </div>

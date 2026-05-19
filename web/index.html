@@ -461,12 +461,12 @@
           <p>Sign in with Google so your base resume, generated versions, and application history stay scoped to you across devices.</p>
           <input id="google-client-id" type="hidden" autocomplete="off" />
           <div class="google-host" id="google-button-host"></div>
-          <div class="or-rule"><span>OR</span></div>
-          <label class="email-field">
-            <span>Email</span>
-            <input id="signin-email" type="email" placeholder="you@company.com" autocomplete="email" />
+          <div class="or-rule google-only-rule"><span>GOOGLE ONLY FOR NOW</span></div>
+          <label class="email-field email-disabled" aria-disabled="true">
+            <span>Email signup</span>
+            <input id="signin-email" type="email" placeholder="Coming later" autocomplete="off" disabled />
           </label>
-          <p class="signin-help" id="signin-help">Google sign-in is loading.</p>
+          <p class="signin-help" id="signin-help">Google is the supported signup method. Email magic links are not enabled yet.</p>
           <div class="onboard-actions">
             <button class="skip-link" id="signin-later" type="button">Maybe later</button>
             <button class="btn-go" id="signin-continue" type="button">Continue <span>→</span></button>

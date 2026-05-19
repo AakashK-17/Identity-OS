@@ -27,7 +27,7 @@ function NewApplicationHero({ onGenerate, onOpenDrawer }) {
         <button className="base-chip" onClick={onOpenDrawer}>
           <div className="av">M</div>
           <div className="lbl">
-            Mara Okafor
+            New profile
             <small>3 experiences · 142 proofs in memory</small>
           </div>
           <span className="arr">Edit base ↗</span>
@@ -208,7 +208,7 @@ function PreviewPanel() {
         <div className="paper">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
             <div>
-              <h2>Mara Okafor</h2>
+              <h2>New profile</h2>
               <div className="role">Data Analyst · Public Health Research</div>
             </div>
             <div style={{ textAlign: 'right', fontSize: 10, color: '#555', lineHeight: 1.45 }}>
@@ -512,7 +512,7 @@ function BaseResumeDrawer({ open, onClose }) {
         <div className="drawer-head">
           <div>
             <h2>Base resume</h2>
-            <div className="who">Editing as <b>Mara Okafor</b> · last synced <b>14:02</b></div>
+            <div className="who">Editing saved profile</div>
           </div>
           <button className="drawer-close" onClick={onClose}><Icon.X/></button>
         </div>
@@ -520,26 +520,26 @@ function BaseResumeDrawer({ open, onClose }) {
         <div className="drawer-body">
           <DrawerSection title="Identity">
             <div className="field-row">
-              <Field label="Name" defaultValue="Mara Okafor"/>
+              <Field label="Name" defaultValue=""/>
               <Field label="Location" defaultValue="New York, NY"/>
             </div>
             <div className="field-row">
-              <Field label="Email" defaultValue="mara@hone.app"/>
+              <Field label="Email" defaultValue=""/>
               <Field label="Phone" defaultValue="+1 (212) 555 0114"/>
             </div>
             <Field label="LinkedIn" defaultValue="linkedin.com/in/mara-okafor"/>
-            <Field label="OpenAI API key" type="password" defaultValue="sk-•••••••••••••••••••••••"/>
+            <Field label="OpenAI API key" type="password" defaultValue=""/>
           </DrawerSection>
 
           <DrawerSection title="Skills & competencies">
             <Field label="Core competencies" textarea
-              defaultValue="Python, SAS, SQL, R, regression modeling, causal inference, state-sequence analysis, manuscript development, Tableau"/>
+              defaultValue=""/>
           </DrawerSection>
 
           <DrawerSection title="Experience" count={2} action={<button className="btn ghost small"><Icon.Plus/>Add</button>}>
             {[
-              { co: "NYU Langone",          role: "Data Analyst II",     dur: "2022 — Present", loc: "New York, NY" },
-              { co: "Mount Sinai Research", role: "Research Analyst",    dur: "2020 — 2022",     loc: "New York, NY" },
+              { co: "", role: "", dur: "", loc: "" },
+              { co: "", role: "", dur: "", loc: "" },
             ].map((e, i) => (
               <div className="subcard" key={i} style={{ background: 'var(--cream-2)' }}>
                 <div className="head">
@@ -555,16 +555,14 @@ function BaseResumeDrawer({ open, onClose }) {
                   <Field label="Location" defaultValue={e.loc}/>
                 </div>
                 <Field label="Base bullets" textarea
-                  defaultValue={"• Led longitudinal analyses on treatment outcomes (Python, SAS)\n• Built dashboards consumed by 12 policy partners across NYC\n• Co-authored 2 manuscripts; one in JAMA Network Open"}/>
+                  defaultValue={""}/>
               </div>
             ))}
           </DrawerSection>
 
           <DrawerSection title="Projects" count={3} action={<button className="btn ghost small"><Icon.Plus/>Add</button>}>
             {[
-              { t: "Substance Use Disorder Treatment Analysis", d: "Led causal-inference analysis affecting 38k patients." },
-              { t: "Healthcare Data Integration",               d: "Unified six datasets; 62% faster analyst lookup." },
-              { t: "Public Health Research Collaboration",      d: "Co-developed analytic plans across two studies." },
+              { t: "", d: "" },
             ].map((p, i) => (
               <div className="subcard" key={i} style={{ background: 'var(--cream-2)' }}>
                 <div className="head">

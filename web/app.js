@@ -19,6 +19,8 @@ const signinContinue = document.querySelector("#signin-continue");
 const googleClientIdInput = document.querySelector("#google-client-id");
 const googleButtonHost = document.querySelector("#google-button-host");
 const signinHelp = document.querySelector("#signin-help");
+
+if (signinContinue) signinContinue.textContent = "Reload Google button";
 const userChip = document.querySelector("#user-chip");
 const userAvatar = document.querySelector("#user-avatar");
 const userName = document.querySelector("#user-name");
@@ -1039,11 +1041,12 @@ async function generateFromWorkspace({ profile, jd, skipPdf = false, apiKey = ""
   if (!state.user?.email) {
     throw new ApiError("Sign in first so the resume can be saved to your job-search history.");
   }
-  await saveProfileFromWorkspace(profile);
+  const activeProfile = window.HoneDraftProfile || profile || state.profile || {};
+  await saveProfileFromWorkspace(activeProfile);
   const data = new FormData();
-  const details = profile?.details || {};
+  const details = activeProfile?.details || {};
   data.set("user_email", state.user.email);
-  data.set("profile_json", JSON.stringify(profile || {}));
+  data.set("profile_json", JSON.stringify(activeProfile || {}));
   data.set("jd", jd || "");
   data.set("name", details.name || "");
   data.set("location", details.location || "");
@@ -1055,6 +1058,7 @@ async function generateFromWorkspace({ profile, jd, skipPdf = false, apiKey = ""
   const result = await apiFetch("/api/generate", { method: "POST", body: data }, "generating your resume");
   await loadHistory();
   renderPlayground({ ...result.history_item, active_version: activeVersion(result.history_item) });
+  window.HoneDraftProfile = null;
   emitHoneState();
   return result;
 }
