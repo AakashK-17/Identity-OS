@@ -21,6 +21,7 @@ from generate_resume import (
     flatten_generated_text,
     generate_resume_from_jd,
     make_template_from_resume,
+    metadata_value_is_bad,
 )
 
 
@@ -194,15 +195,20 @@ BAD_HISTORY_METADATA = {
 
 
 def needs_metadata_repair(item: dict) -> bool:
-    company = str(item.get("company", "")).strip().lower()
-    role = str(item.get("role", "")).strip().lower()
-    return company in BAD_HISTORY_METADATA or role in BAD_HISTORY_METADATA
+    company = str(item.get("company", "")).strip()
+    role = str(item.get("role", "")).strip()
+    return (
+        company.lower() in BAD_HISTORY_METADATA
+        or role.lower() in BAD_HISTORY_METADATA
+        or metadata_value_is_bad(company, "company")
+        or metadata_value_is_bad(role, "role")
+    )
 
 
 def repair_history_metadata_item(item: dict) -> bool:
     if not needs_metadata_repair(item) or not item.get("jd"):
         return False
-    metadata = extract_job_metadata(item.get("jd", ""))
+    metadata = extract_job_metadata(item.get("jd", ""), api_key=os.environ.get("OPENAI_API_KEY"))
     changed = False
     company = metadata.get("company_display", "Unknown Company")
     role = metadata.get("role_display", "Target Role")

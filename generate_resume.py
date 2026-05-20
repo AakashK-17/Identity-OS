@@ -69,6 +69,7 @@ TITLE_KEYWORDS = [
     "coordinator", "developer", "director", "engineer", "lead", "manager", "officer", "planner",
     "product manager", "program manager", "researcher", "scientist", "specialist", "strategist",
     "technician", "writer", "designer", "marketer", "assistant", "supervisor", "executive",
+    "chief", "partner", "staff",
 ]
 COMPANY_SUFFIX_PATTERN = (
     r"LLC|L\.L\.C\.|Inc\.?|Incorporated|Corporation|Corp\.?|Company|Co\.|Technologies|Technology|"
@@ -122,6 +123,28 @@ BAD_METADATA_PATTERNS = [
     r"^[a-z][a-z .'-]+,\s*[a-z]{2}(?:\b|$)",
 ]
 LINKEDIN_SEPARATOR_PATTERN = r"\s+(?:\||\?|\ufffd|\u00b7|\u2022)\s+"
+BAD_DISPLAY_VALUES = {
+    "",
+    "company",
+    "role",
+    "job",
+    "title",
+    "target role",
+    "unknown company",
+    "hiring company",
+    "position overview",
+    "job overview",
+    "job description",
+    "role overview",
+    "position summary",
+    "job summary",
+    "summary",
+    "overview",
+    "about the job",
+    "responsibilities",
+    "qualifications",
+    "knowledge skills and abilities",
+}
 
 
 def clean_metadata_value(value: str, max_len: int = 90) -> str:
@@ -149,7 +172,7 @@ def metadata_lines(jd_text: str) -> list[str]:
 
 def is_bad_metadata_line(line: str) -> bool:
     lower = (line or "").lower()
-    if not lower or lower in {"role", "company", "job", "title", "description", "overview"}:
+    if not lower or lower in BAD_DISPLAY_VALUES or lower in {"description"}:
         return True
     return any(re.search(pattern, lower) for pattern in BAD_METADATA_PATTERNS)
 
@@ -177,6 +200,35 @@ def is_probable_company(value: str) -> bool:
         return False
     if re.search(rf"\b(?:{COMPANY_SUFFIX_PATTERN})\b", cleaned, re.IGNORECASE):
         return True
+    return False
+
+
+def metadata_value_is_bad(value: str, kind: str) -> bool:
+    cleaned = clean_metadata_value(value, max_len=180)
+    lower = cleaned.lower()
+    words = cleaned.split()
+    if not cleaned or lower in BAD_DISPLAY_VALUES or is_bad_metadata_line(cleaned):
+        return True
+    if re.match(r"^[•*\-\u2022]\s+", cleaned):
+        return True
+    if len(cleaned) > 120:
+        return True
+    if kind == "role":
+        if len(words) > 12:
+            return True
+        if len(words) > 3 and not has_title_keyword(cleaned):
+            return True
+        if re.search(r"\b(produce|serve|support|conduct|manage|build|create|develop|deliver|provide|ensure|prepare|present|translate)\b", lower) and len(words) >= 4:
+            return True
+        if re.search(r"\b(track record|trusted advisor|client-ready deliverables|presenting insights|influencing decisions)\b", lower):
+            return True
+        if cleaned.endswith(".") or cleaned.count(",") >= 2:
+            return True
+    if kind == "company":
+        if len(words) > 10:
+            return True
+        if re.search(r"\b(alumni|recruiter|staffing|poster|promoted|hiring company)\b", lower):
+            return True
     return False
 
 
@@ -243,8 +295,8 @@ def extract_role_from_text(jd_text: str, lines: list[str]) -> tuple[str, str] | 
 
 
 def extract_company_from_text(jd_text: str, lines: list[str]) -> tuple[str, str] | None:
-    labeled = labeled_metadata_value(lines, ["company", "organization", "employer", "client"])
-    if labeled and is_probable_company(labeled[0]):
+    labeled = labeled_metadata_value(lines, ["hiring company", "company", "organization", "employer", "client"])
+    if labeled and (is_probable_company(labeled[0]) or is_probable_linkedin_company(labeled[0])):
         return labeled
 
     logo_match = re.search(r"company logo for,?\s*([^\n\r.]+)", jd_text, re.IGNORECASE)
@@ -271,13 +323,15 @@ def extract_company_from_text(jd_text: str, lines: list[str]) -> tuple[str, str]
                 return company, "company-phrase"
 
     for line in lines[:20]:
+        if ":" in line:
+            continue
         if is_probable_company(line):
             return clean_metadata_value(line), "top-line"
 
     return None
 
 
-def extract_job_metadata(jd_text: str) -> dict:
+def deterministic_job_metadata(jd_text: str) -> dict:
     lines = metadata_lines(jd_text)
     role_result = extract_role_from_text(jd_text, lines)
     company_result = extract_company_from_text(jd_text, lines)
@@ -296,6 +350,8 @@ def extract_job_metadata(jd_text: str) -> dict:
         "company_filename": safe_filename(company_display, "Unknown Company"),
         "role_filename": safe_filename(role_display, "Target Role"),
         "metadata_confidence": confidence,
+        "source": "deterministic" if confidence else "fallback",
+        "reason": "Extracted from explicit labels, LinkedIn-style lines, or title/company patterns." if confidence else "No reliable company or title found in the JD.",
         "metadata_source": {
             "company": company_result[1] if company_result else "fallback",
             "role": role_result[1] if role_result else "fallback",
@@ -303,8 +359,110 @@ def extract_job_metadata(jd_text: str) -> dict:
     }
 
 
-def extract_company_role(jd_text: str) -> tuple[str, str]:
-    metadata = extract_job_metadata(jd_text)
+def validate_metadata_result(metadata: dict, source: str = "ai") -> dict | None:
+    company = clean_metadata_value(str(metadata.get("company_display", "")), max_len=90)
+    role = clean_role_value(str(metadata.get("role_display", "")))
+    confidence_raw = metadata.get("metadata_confidence", 0)
+    try:
+        confidence = int(confidence_raw)
+    except (TypeError, ValueError):
+        confidence = 0
+
+    company_bad = metadata_value_is_bad(company, "company")
+    role_bad = metadata_value_is_bad(role, "role")
+    if company_bad:
+        company = "Unknown Company"
+    if role_bad:
+        role = "Target Role"
+    if company == "Unknown Company" and role == "Target Role" and source == "ai":
+        return None
+
+    confidence = max(0, min(100, confidence))
+    if company != "Unknown Company" and role != "Target Role" and confidence < 60:
+        confidence = 80
+    elif company != "Unknown Company" or role != "Target Role":
+        confidence = max(confidence, 50)
+
+    metadata_source = metadata.get("metadata_source") if isinstance(metadata.get("metadata_source"), dict) else {}
+    metadata_source = {
+        "company": metadata_source.get("company", source) if company != "Unknown Company" else "fallback",
+        "role": metadata_source.get("role", source) if role != "Target Role" else "fallback",
+    }
+
+    return {
+        "company_display": company,
+        "role_display": role,
+        "company_filename": safe_filename(company, "Unknown Company"),
+        "role_filename": safe_filename(role, "Target Role"),
+        "metadata_confidence": confidence,
+        "source": source,
+        "reason": clean_metadata_value(str(metadata.get("reason", "")), max_len=160) or f"Metadata extracted by {source}.",
+        "metadata_source": metadata_source,
+    }
+
+
+def ai_extract_job_metadata(jd_text: str, api_key: str | None = None, model: str = DEFAULT_MODEL) -> dict | None:
+    key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not key:
+        return None
+    prompt = f"""
+Extract only the hiring company name and exact job title from this job description.
+
+Return strict JSON only with:
+{{
+  "company_display": "string",
+  "role_display": "string",
+  "metadata_confidence": 0-100,
+  "reason": "short explanation"
+}}
+
+Rules:
+- company_display must be the actual employer/hiring company, not alumni pages, recruiters, job boards, posters, sources, or headings.
+- role_display must be the actual job title, not a responsibility, bullet, section heading, tagline, or sentence.
+- Ignore benefits, pay, location, application status, equal opportunity, company awards, and marketing boilerplate.
+- If the company is absent, use "Unknown Company".
+- If the title is absent, use "Target Role".
+- Do not infer from responsibilities. Prefer Unknown/Target over guessing.
+
+JOB DESCRIPTION:
+{jd_text[:12000]}
+""".strip()
+    try:
+        client = OpenAI(api_key=key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            response_format={"type": "json_object"},
+            timeout=20,
+        )
+        raw = response.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        return validate_metadata_result(data, source="ai")
+    except Exception:
+        return None
+
+
+def extract_job_metadata(jd_text: str, api_key: str | None = None, prefer_ai: bool = True) -> dict:
+    if prefer_ai:
+        ai_metadata = ai_extract_job_metadata(jd_text, api_key=api_key)
+        if ai_metadata:
+            return ai_metadata
+    deterministic = deterministic_job_metadata(jd_text)
+    return validate_metadata_result(deterministic, source=deterministic.get("source", "deterministic")) or {
+        "company_display": "Unknown Company",
+        "role_display": "Target Role",
+        "company_filename": "Unknown Company",
+        "role_filename": "Target Role",
+        "metadata_confidence": 0,
+        "source": "fallback",
+        "reason": "No reliable company or title found in the JD.",
+        "metadata_source": {"company": "fallback", "role": "fallback"},
+    }
+
+
+def extract_company_role(jd_text: str, api_key: str | None = None) -> tuple[str, str]:
+    metadata = extract_job_metadata(jd_text, api_key=api_key)
     return metadata["company_display"], metadata["role_display"]
 
 
@@ -1505,7 +1663,7 @@ def generate_resume_from_jd(
 
     data = call_llm(base_resume_text, jd_text, model, api_key=api_key)
 
-    metadata = extract_job_metadata(jd_text)
+    metadata = extract_job_metadata(jd_text, api_key=api_key)
     company = metadata["company_display"]
     role = metadata["role_display"]
     company_filename = metadata["company_filename"]
