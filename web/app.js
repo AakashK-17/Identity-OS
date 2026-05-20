@@ -428,6 +428,7 @@ function logout() {
   if (window.google?.accounts?.id) {
     window.google.accounts.id.disableAutoSelect();
   }
+  window.HoneDraftProfile = null;
   state.user = null;
   state.history = [];
   state.profile = null;
@@ -1007,7 +1008,7 @@ async function saveBaseProfile() {
     body: JSON.stringify({ email: state.user.email, profile }),
   }, "saving your base resume");
   state.profile = result.profile;
-  setInlineStatus("success", "Base resume saved. Future JDs will use this structured profile.");
+  setInlineStatus(result.warning ? "warning" : "success", result.warning || "Base resume saved. Future JDs will use this structured profile.");
   emitHoneState();
 }
 
@@ -1022,17 +1023,40 @@ async function loadProfile() {
   emitHoneState();
 }
 
+function itemHasContent(value) {
+  if (Array.isArray(value)) return value.some(itemHasContent);
+  if (value && typeof value === "object") return Object.values(value).some(itemHasContent);
+  return Boolean(String(value || "").trim());
+}
+
+function workspaceProfileHasContent(profile) {
+  if (!profile || typeof profile !== "object") return false;
+  const details = profile.details || {};
+  const detailCount = Object.values(details).filter((value) => String(value || "").trim()).length;
+  return Boolean(
+    detailCount >= 2 ||
+    String(profile.skills || "").trim() ||
+    ["experiences", "projects", "education", "certifications"].some((key) => Array.isArray(profile[key]) && profile[key].some(itemHasContent))
+  );
+}
+
 async function saveProfileFromWorkspace(profile) {
   if (!state.user?.email) {
     throw new ApiError("Sign in first so your base resume can be saved.");
   }
+  const candidate = profile || {};
+  if (!workspaceProfileHasContent(candidate) && workspaceProfileHasContent(state.profile || {})) {
+    window.HoneDraftProfile = null;
+    return state.profile;
+  }
   const result = await apiFetch("/api/profile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: state.user.email, profile }),
+    body: JSON.stringify({ email: state.user.email, profile: candidate }),
   }, "saving your base resume");
-  state.profile = result.profile || profile;
+  state.profile = result.profile || candidate;
   hydrateProfile(state.profile);
+  if (result.warning) setInlineStatus("warning", result.warning);
   emitHoneState();
   return state.profile;
 }
@@ -1041,7 +1065,11 @@ async function generateFromWorkspace({ profile, jd, skipPdf = false, apiKey = ""
   if (!state.user?.email) {
     throw new ApiError("Sign in first so the resume can be saved to your job-search history.");
   }
-  const activeProfile = window.HoneDraftProfile || profile || state.profile || {};
+  const draftProfile = window.HoneDraftProfile;
+  const activeProfile = workspaceProfileHasContent(draftProfile || {}) ? draftProfile : (profile || state.profile || {});
+  if (!workspaceProfileHasContent(activeProfile || {})) {
+    throw new ApiError("Add your base resume first. Hone needs your real profile before it can tailor a resume.");
+  }
   await saveProfileFromWorkspace(activeProfile);
   const data = new FormData();
   const details = activeProfile?.details || {};

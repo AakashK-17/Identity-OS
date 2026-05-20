@@ -545,6 +545,12 @@ function BaseResumeDrawer({ open, onClose, snapshot }) {
 
   async function save() {
     const ready = profileHasContent(draft);
+    if (!ready && profileHasContent(snapshot?.profile || {})) {
+      window.HoneDraftProfile = null;
+      setDraft(activeDraftProfile({ ...snapshot, profile: snapshot.profile }));
+      setMessage("Saved profile was kept. Empty draft was not allowed to overwrite your base resume.");
+      return;
+    }
     const next = normalizeProfile({ ...draft, onboarding_complete: ready }, snapshot?.user || {});
     setSaving(true);
     setMessage("Saving...");

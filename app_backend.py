@@ -155,9 +155,31 @@ def save_profile(email: str, profile: dict) -> dict:
     key = user_key(email)
     data = load_history()
     record = data.setdefault("users", {}).setdefault(key, {"profile": {"email": key}, "items": []})
+    existing = record.get("base_resume", {})
+    if not profile_has_content(profile) and profile_has_content(existing):
+        return {
+            "profile": existing,
+            "warning": "Saved profile was kept. Empty draft was not allowed to overwrite your base resume.",
+        }
     record["base_resume"] = profile
     save_history(data)
-    return profile
+    return {"profile": profile, "warning": ""}
+
+
+def item_has_content(item) -> bool:
+    if isinstance(item, str):
+        return bool(item.strip())
+    if isinstance(item, dict):
+        meaningful_keys = {
+            "company", "role", "title", "duration", "location", "school", "degree",
+            "date", "description", "name", "issuer", "credential",
+        }
+        return any(item_has_content(value) for key, value in item.items() if key in meaningful_keys) or any(
+            item_has_content(value) for value in item.get("bullets", []) if isinstance(item.get("bullets", []), list)
+        )
+    if isinstance(item, list):
+        return any(item_has_content(value) for value in item)
+    return bool(item)
 
 
 def get_profile(email: str) -> dict:
@@ -307,7 +329,17 @@ def normalize_resume_item(item: dict) -> dict:
 def profile_has_content(profile: dict | None) -> bool:
     if not isinstance(profile, dict):
         return False
-    return any(bool(profile.get(key)) for key in ["details", "experiences", "experience", "projects", "education", "certifications", "skills"])
+    details = profile.get("details", {}) if isinstance(profile.get("details"), dict) else {}
+    detail_count = sum(1 for value in details.values() if str(value or "").strip())
+    if detail_count >= 2:
+        return True
+    if str(profile.get("skills", "") or "").strip():
+        return True
+    for key in ["experiences", "experience", "projects", "education", "certifications"]:
+        values = profile.get(key, [])
+        if isinstance(values, list) and any(item_has_content(item) for item in values):
+            return True
+    return False
 
 
 def playground_payload(item: dict) -> dict:
@@ -1301,6 +1333,12 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
                 "build_commit": BUILD_COMMIT,
                 "build_timestamp": BUILD_TIMESTAMP,
+                "storage": {
+                    "data_dir": str(DATA_DIR),
+                    "history_exists": HISTORY_FILE.exists(),
+                    "output_root": str(OUTPUT_ROOT),
+                    "output_root_exists": OUTPUT_ROOT.exists(),
+                },
             })
             return
 
@@ -1309,6 +1347,12 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "build_commit": BUILD_COMMIT,
                 "build_timestamp": BUILD_TIMESTAMP,
                 "jd_intelligence_version": JD_INTELLIGENCE_VERSION,
+                "storage": {
+                    "data_dir": str(DATA_DIR),
+                    "history_exists": HISTORY_FILE.exists(),
+                    "output_root": str(OUTPUT_ROOT),
+                    "output_root_exists": OUTPUT_ROOT.exists(),
+                },
             })
             return
 
@@ -1346,8 +1390,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/profile":
                 body = read_json_body(self)
                 email = body.get("email", "")
-                profile = save_profile(email, body.get("profile", {}))
-                json_response(self, HTTPStatus.OK, {"profile": profile})
+                result = save_profile(email, body.get("profile", {}))
+                json_response(self, HTTPStatus.OK, result)
                 return
             if parsed.path.startswith("/api/resume/"):
                 self.handle_resume_action(parsed.path)
