@@ -670,6 +670,28 @@ a { color: inherit; text-decoration: none; }
   color: var(--muted);
   font-size: 14px;
 }
+.preview-stage .preview-error {
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 32px;
+}
+.preview-error strong {
+  color: var(--ink);
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.preview-error span {
+  max-width: 360px;
+  line-height: 1.55;
+}
+.preview-error div {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
 .preview-stage::before {
   content: "";
   position: absolute; inset: 0;

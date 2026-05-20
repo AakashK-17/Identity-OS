@@ -1711,10 +1711,46 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         if not file_path.exists():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        body = file_path.read_bytes()
-        self.send_response(HTTPStatus.OK)
+
+        file_size = file_path.stat().st_size
+        range_header = self.headers.get("Range", "")
+        start = 0
+        end = file_size - 1
+        status = HTTPStatus.OK
+
+        if range_header.startswith("bytes="):
+            match = re.match(r"bytes=(\d*)-(\d*)", range_header)
+            if match:
+                raw_start, raw_end = match.groups()
+                if raw_start:
+                    start = int(raw_start)
+                if raw_end:
+                    end = int(raw_end)
+                if not raw_start and raw_end:
+                    suffix = int(raw_end)
+                    start = max(file_size - suffix, 0)
+                    end = file_size - 1
+                if start >= file_size or end < start:
+                    self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                    self.send_header("Content-Range", f"bytes */{file_size}")
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.end_headers()
+                    return
+                end = min(end, file_size - 1)
+                status = HTTPStatus.PARTIAL_CONTENT
+
+        length = end - start + 1
+        with file_path.open("rb") as handle:
+            handle.seek(start)
+            body = handle.read(length)
+
+        self.send_response(status)
         self.send_header("Content-Type", "application/pdf")
         self.send_header("Content-Disposition", f'inline; filename="{file_path.name}"')
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-store")
+        if status == HTTPStatus.PARTIAL_CONTENT:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

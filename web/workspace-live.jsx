@@ -255,6 +255,31 @@ function PreviewPanel({ item, processingMode = "idle" }) {
   const docxUrl = item?.docx_url || (item ? `/api/download/${item.id}/docx` : "");
   const pdfUrl = item?.pdf_url || "";
   const processing = processingMode !== "idle";
+  const [previewError, setPreviewError] = React.useState(false);
+  const [retryKey, setRetryKey] = React.useState(0);
+
+  React.useEffect(() => {
+    setPreviewError(false);
+  }, [previewUrl, item?.active_version_id]);
+
+  function checkPreviewFrame(event) {
+    setTimeout(() => {
+      try {
+        const text = event.currentTarget.contentDocument?.body?.innerText || "";
+        if (/bad gateway|service unavailable|not found|application error|render/i.test(text)) {
+          setPreviewError(true);
+        }
+      } catch (error) {
+        // Browser PDF viewers often block document inspection. That means the PDF loaded normally.
+      }
+    }, 80);
+  }
+
+  function retryPreview() {
+    setPreviewError(false);
+    setRetryKey((value) => value + 1);
+  }
+
   return (
     <div className="preview-wrap">
       <div className="preview-toolbar">
@@ -271,8 +296,23 @@ function PreviewPanel({ item, processingMode = "idle" }) {
             <TerminalStatus active={processing} mode={processingMode}/>
           </div>
         )}
-        {previewUrl ? (
-          <iframe className="paper pdf-paper" title="Generated resume preview" src={previewUrl}></iframe>
+        {previewUrl && !previewError ? (
+          <iframe
+            key={`${previewUrl}-${retryKey}`}
+            className="paper pdf-paper"
+            title="Generated resume preview"
+            src={previewUrl}
+            onLoad={checkPreviewFrame}
+          ></iframe>
+        ) : previewUrl && previewError ? (
+          <div className="paper empty-paper preview-error">
+            <strong>PDF preview could not load.</strong>
+            <span>The resume file is still available. Retry the inline preview or open the PDF directly.</span>
+            <div>
+              <button className="btn small ink" type="button" onClick={retryPreview}>Retry preview</button>
+              <a className="btn small ghost" href={previewUrl} target="_blank" rel="noreferrer">Open PDF</a>
+            </div>
+          </div>
         ) : processing ? (
           <div className="paper preview-skeleton-paper">
             <span></span><span></span><span></span><span></span><span></span><span></span>
