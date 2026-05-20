@@ -4,7 +4,7 @@ services:
     env: docker
     plan: starter
     autoDeploy: true
-    healthCheckPath: /
+    healthCheckPath: /api/health
     disk:
       name: identity-os-data
       mountPath: /app/data
@@ -20,3 +20,15 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_FRONTEND_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "1.0"
+      - key: SENTRY_FRONTEND_TRACES_SAMPLE_RATE
+        value: "0.2"
+      - key: SENTRY_PROFILES_SAMPLE_RATE
+        value: "0.2"

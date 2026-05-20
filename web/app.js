@@ -76,6 +76,7 @@ const state = {
   identityScenesStarted: false,
   identityScenes: [],
   activeResume: null,
+  sentryInitialized: false,
 };
 
 function emitHoneState() {
@@ -108,6 +109,43 @@ class ApiError extends Error {
     this.type = details.type || "";
     this.requestId = details.requestId || "";
   }
+}
+
+function initFrontendMonitoring(config = {}) {
+  const dsn = config.sentry_frontend_dsn || "";
+  if (!dsn || !window.Sentry || state.sentryInitialized) return;
+  const sampleRate = Number(config.sentry_traces_sample_rate || 0.2);
+  window.Sentry.init({
+    dsn,
+    environment: config.sentry_environment || "development",
+    release: config.sentry_release || config.build_commit || undefined,
+    integrations: [window.Sentry.browserTracingIntegration()],
+    tracesSampleRate: Number.isFinite(sampleRate) ? sampleRate : 0.2,
+    tracePropagationTargets: ["localhost", /^https:\/\/identity-os-resume\.onrender\.com\/api/, /^\/api\//],
+    sendDefaultPii: false,
+    beforeSend(event) {
+      if (event.request) {
+        delete event.request.cookies;
+        delete event.request.data;
+      }
+      return event;
+    },
+  });
+  window.Sentry.setTag("service", "hone-web");
+  state.sentryInitialized = true;
+}
+
+function reportFrontendError(error, context = {}) {
+  if (!window.Sentry || !state.sentryInitialized) return;
+  window.Sentry.withScope((scope) => {
+    Object.entries(context).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) scope.setExtra(key, value);
+    });
+    if (context.route) scope.setTag("api.route", context.route);
+    if (context.status) scope.setTag("api.status", String(context.status));
+    if (context.requestId) scope.setTag("request_id", context.requestId);
+    window.Sentry.captureException(error);
+  });
 }
 
 function apiErrorMessage(context, status, payload = {}, rawText = "") {
@@ -150,8 +188,34 @@ async function parseApiResponse(response, context = "processing your request") {
 }
 
 async function apiFetch(url, options = {}, context) {
-  const response = await fetch(url, options);
-  return parseApiResponse(response, context);
+  const startedAt = performance.now();
+  const method = options.method || "GET";
+  try {
+    const response = await fetch(url, options);
+    const payload = await parseApiResponse(response, context);
+    if (window.Sentry && state.sentryInitialized) {
+      window.Sentry.addBreadcrumb({
+        category: "api",
+        message: `${method} ${url}`,
+        level: "info",
+        data: {
+          status: response.status,
+          duration_ms: Math.round(performance.now() - startedAt),
+        },
+      });
+    }
+    return payload;
+  } catch (error) {
+    reportFrontendError(error, {
+      route: String(url).split("?")[0],
+      method,
+      context,
+      status: error.status,
+      requestId: error.requestId,
+      duration_ms: Math.round(performance.now() - startedAt),
+    });
+    throw error;
+  }
 }
 
 function initAmbientField() {
@@ -1209,6 +1273,7 @@ draw();
 initIdentityEngine();
 apiFetch("/api/config", {}, "loading app configuration")
   .then((config) => {
+    initFrontendMonitoring(config);
     if (config.google_client_id) {
       state.googleClientId = config.google_client_id;
       if (googleClientIdInput) googleClientIdInput.value = state.googleClientId;

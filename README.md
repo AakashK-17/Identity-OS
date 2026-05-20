@@ -64,6 +64,7 @@ Key routes:
 
 ```text
 GET  /api/config
+GET  /api/health
 POST /api/signin
 GET  /api/profile
 POST /api/profile
@@ -95,9 +96,23 @@ GOOGLE_CLIENT_ID=your_google_oauth_web_client_id_here
 HOST=127.0.0.1
 PORT=8787
 OUTPUT_ROOT=./data/generated
+SENTRY_DSN=your_sentry_backend_dsn_here
+SENTRY_FRONTEND_DSN=your_sentry_browser_dsn_here
+SENTRY_ENVIRONMENT=development
+SENTRY_TRACES_SAMPLE_RATE=1.0
+SENTRY_FRONTEND_TRACES_SAMPLE_RATE=0.2
+SENTRY_PROFILES_SAMPLE_RATE=0.0
 ```
 
 Do not commit `.env`. It contains secrets.
+
+## Monitoring
+
+Hone supports Sentry for production monitoring. When `SENTRY_DSN` is configured, the backend captures API errors, request traces, generation timing, regeneration timing, OpenAI spans, DOCX/PDF export spans, scoring spans, preview/download issues, and release/environment metadata.
+
+When `SENTRY_FRONTEND_DSN` is configured, the browser captures frontend errors and failed API calls without sending resume text, JD text, profile bodies, cookies, or API keys.
+
+Use `/api/health` to confirm runtime health, OpenAI configuration, Sentry configuration, build commit, and storage mount status.
 
 ## Local Setup
 
@@ -163,6 +178,12 @@ GOOGLE_CLIENT_ID=your Google OAuth Web Client ID
 HOST=0.0.0.0
 PORT=8787
 OUTPUT_ROOT=/app/data/generated
+SENTRY_DSN=your Sentry backend DSN
+SENTRY_FRONTEND_DSN=your Sentry browser DSN
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=1.0
+SENTRY_FRONTEND_TRACES_SAMPLE_RATE=0.2
+SENTRY_PROFILES_SAMPLE_RATE=0.2
 ```
 
 5. Confirm the persistent disk is mounted at:

@@ -16,8 +16,12 @@ from docx.shared import Inches, Pt
 from docx.text.paragraph import Paragraph
 from openai import OpenAI
 
+from monitoring import capture_monitoring_exception, init_monitoring, monitor_span
+
 
 # ---------------- CONFIG ---------------- #
+
+init_monitoring("hone-resume-generator")
 
 BASE_RESUME = Path(r"D:\Resume's and coverletter\University of Utah Health Research\Aakash Kunarapu_Data Scientist_Template.docx")
 OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", r"D:\Resume's and coverletter"))
@@ -428,18 +432,20 @@ JOB DESCRIPTION:
 {jd_text[:12000]}
 """.strip()
     try:
-        client = OpenAI(api_key=key)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            response_format={"type": "json_object"},
-            timeout=20,
-        )
+        with monitor_span("openai.metadata", "Extract job metadata with OpenAI", model=model):
+            client = OpenAI(api_key=key)
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                response_format={"type": "json_object"},
+                timeout=20,
+            )
         raw = response.choices[0].message.content or "{}"
         data = json.loads(raw)
         return validate_metadata_result(data, source="ai")
-    except Exception:
+    except Exception as exc:
+        capture_monitoring_exception(exc, stage="metadata.openai")
         return None
 
 
@@ -1575,14 +1581,16 @@ def call_llm(base_resume_text: str, jd_text: str, model: str, api_key: str | Non
 
     for attempt in range(3):
         active_prompt = prompt if attempt == 0 else build_retry_prompt(prompt, data, issues)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": active_prompt}],
-            temperature=0.25,
-            response_format={"type": "json_object"},
-        )
+        with monitor_span("openai.resume_generation", "Generate resume JSON with OpenAI", model=model, attempt=attempt + 1):
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": active_prompt}],
+                temperature=0.25,
+                response_format={"type": "json_object"},
+            )
         data = extract_json(response.choices[0].message.content)
-        issues = validate_generated_resume(data) + validate_authenticity(data, base_resume_text)
+        with monitor_span("resume.validation", "Validate generated resume JSON", attempt=attempt + 1):
+            issues = validate_generated_resume(data) + validate_authenticity(data, base_resume_text)
         if not issues:
             return data
 
@@ -1612,22 +1620,26 @@ def convert_to_pdf(docx_path: Path, output_dir: Path) -> Path:
     pdf_path = output_dir / f"{docx_path.stem}.pdf"
 
     try:
-        soffice = find_libreoffice()
-        subprocess.run(
-            [
-                soffice,
-                "--headless",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(output_dir),
-                str(docx_path),
-            ],
-            check=True,
-        )
+        with monitor_span("pdf.export.libreoffice", "Export DOCX to PDF with LibreOffice"):
+            soffice = find_libreoffice()
+            subprocess.run(
+                [
+                    soffice,
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(output_dir),
+                    str(docx_path),
+                ],
+                check=True,
+            )
         return pdf_path
     except FileNotFoundError:
         pass
+    except Exception as exc:
+        capture_monitoring_exception(exc, stage="pdf.export.libreoffice")
+        raise
 
     ps_command = (
         "$word = New-Object -ComObject Word.Application; "
@@ -1640,7 +1652,8 @@ def convert_to_pdf(docx_path: Path, output_dir: Path) -> Path:
     env = os.environ.copy()
     env["DOCX_PATH"] = str(docx_path)
     env["PDF_PATH"] = str(pdf_path)
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps_command], check=True, env=env)
+    with monitor_span("pdf.export.word", "Export DOCX to PDF with Word COM fallback"):
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_command], check=True, env=env)
     return pdf_path
 
 
@@ -1658,12 +1671,14 @@ def generate_resume_from_jd(
     if not base_resume_path.exists():
         raise FileNotFoundError(f"Base resume not found: {base_resume_path}")
 
-    doc = Document(str(base_resume_path))
-    base_resume_text = document_text(doc)
+    with monitor_span("docx.read_base", "Read base resume template"):
+        doc = Document(str(base_resume_path))
+        base_resume_text = document_text(doc)
 
     data = call_llm(base_resume_text, jd_text, model, api_key=api_key)
 
-    metadata = extract_job_metadata(jd_text, api_key=api_key)
+    with monitor_span("metadata.extract", "Extract company and role metadata"):
+        metadata = extract_job_metadata(jd_text, api_key=api_key)
     company = metadata["company_display"]
     role = metadata["role_display"]
     company_filename = metadata["company_filename"]
@@ -1671,16 +1686,17 @@ def generate_resume_from_jd(
     output_dir = output_root / company_filename
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    update_contact_details(doc, details or {})
+    with monitor_span("docx.compose", "Compose DOCX resume"):
+        update_contact_details(doc, details or {})
 
-    missing = replace_placeholders(doc, data)
-    if missing:
-        replace_existing_resume_sections(doc, data)
-        missing = []
+        missing = replace_placeholders(doc, data)
+        if missing:
+            replace_existing_resume_sections(doc, data)
+            missing = []
 
-    candidate_name = safe_filename((details or {}).get("name", ""), "Resume", max_len=60)
-    docx_path = output_dir / f"{candidate_name}_{role_filename}.docx"
-    doc.save(str(docx_path))
+        candidate_name = safe_filename((details or {}).get("name", ""), "Resume", max_len=60)
+        docx_path = output_dir / f"{candidate_name}_{role_filename}.docx"
+        doc.save(str(docx_path))
 
     pdf_path = None
     if not skip_pdf:

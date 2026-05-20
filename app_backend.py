@@ -23,6 +23,15 @@ from generate_resume import (
     make_template_from_resume,
     metadata_value_is_bad,
 )
+from monitoring import (
+    add_monitoring_breadcrumb,
+    capture_monitoring_exception,
+    init_monitoring,
+    monitor_span,
+    monitor_transaction,
+    monitoring_enabled,
+    set_monitoring_context,
+)
 
 
 ROOT = Path(__file__).parent.resolve()
@@ -50,6 +59,7 @@ def load_local_env() -> None:
 
 
 load_local_env()
+init_monitoring("hone-backend")
 
 OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", DATA_DIR / "generated")).resolve()
 
@@ -1289,7 +1299,20 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         self.request_id = uuid.uuid4().hex[:12]
         self.request_started_at = time.perf_counter()
+        self.response_status = None
         super().__init__(*args, **kwargs)
+
+    def handle_one_request(self):
+        with monitor_transaction("http request", "http.server", request_id=self.request_id):
+            try:
+                return super().handle_one_request()
+            except Exception as exc:
+                capture_monitoring_exception(exc, request_id=self.request_id, stage="http.request")
+                raise
+
+    def send_response(self, code, message=None):
+        self.response_status = code
+        super().send_response(code, message)
 
     def log_message(self, format, *args):
         duration_ms = round((time.perf_counter() - getattr(self, "request_started_at", time.perf_counter())) * 1000)
@@ -1308,6 +1331,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        set_monitoring_context(request_id=self.request_id, http_method="GET", route=parsed.path)
+        add_monitoring_breadcrumb("GET request", "http", path=parsed.path, request_id=self.request_id)
 
         if parsed.path.startswith("/api/download/"):
             self.serve_download(parsed.path)
@@ -1331,6 +1356,27 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, {
                 "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
+                "sentry_configured": monitoring_enabled(),
+                "sentry_frontend_dsn": os.environ.get("SENTRY_FRONTEND_DSN", ""),
+                "sentry_environment": os.environ.get("SENTRY_ENVIRONMENT", "development"),
+                "sentry_release": os.environ.get("SENTRY_RELEASE") or BUILD_COMMIT,
+                "sentry_traces_sample_rate": os.environ.get("SENTRY_FRONTEND_TRACES_SAMPLE_RATE", "0.2"),
+                "build_commit": BUILD_COMMIT,
+                "build_timestamp": BUILD_TIMESTAMP,
+                "storage": {
+                    "data_dir": str(DATA_DIR),
+                    "history_exists": HISTORY_FILE.exists(),
+                    "output_root": str(OUTPUT_ROOT),
+                    "output_root_exists": OUTPUT_ROOT.exists(),
+                },
+            })
+            return
+
+        if parsed.path == "/api/health":
+            json_response(self, HTTPStatus.OK, {
+                "ok": True,
+                "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
+                "sentry_configured": monitoring_enabled(),
                 "build_commit": BUILD_COMMIT,
                 "build_timestamp": BUILD_TIMESTAMP,
                 "storage": {
@@ -1347,6 +1393,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "build_commit": BUILD_COMMIT,
                 "build_timestamp": BUILD_TIMESTAMP,
                 "jd_intelligence_version": JD_INTELLIGENCE_VERSION,
+                "sentry_configured": monitoring_enabled(),
                 "storage": {
                     "data_dir": str(DATA_DIR),
                     "history_exists": HISTORY_FILE.exists(),
@@ -1378,19 +1425,23 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        set_monitoring_context(request_id=self.request_id, http_method="POST", route=parsed.path)
+        add_monitoring_breadcrumb("POST request", "http", path=parsed.path, request_id=self.request_id)
         try:
             if parsed.path == "/api/generate":
                 result = self.handle_generate()
                 json_response(self, HTTPStatus.OK, result)
                 return
             if parsed.path == "/api/signin":
-                profile = upsert_user(read_json_body(self))
+                with monitor_span("auth.signin", "Sign in or create Hone user", request_id=self.request_id):
+                    profile = upsert_user(read_json_body(self))
                 json_response(self, HTTPStatus.OK, {"profile": profile, "items": get_history_items(profile["email"])})
                 return
             if parsed.path == "/api/profile":
-                body = read_json_body(self)
-                email = body.get("email", "")
-                result = save_profile(email, body.get("profile", {}))
+                with monitor_span("profile.save", "Save base resume profile", request_id=self.request_id):
+                    body = read_json_body(self)
+                    email = body.get("email", "")
+                    result = save_profile(email, body.get("profile", {}))
                 json_response(self, HTTPStatus.OK, result)
                 return
             if parsed.path.startswith("/api/resume/"):
@@ -1400,23 +1451,26 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         except AppError as exc:
             self.send_api_error(exc.status, str(exc), exc.__class__.__name__)
         except Exception as exc:
+            capture_monitoring_exception(exc, request_id=self.request_id, route=parsed.path, method="POST")
             self.send_api_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc), exc.__class__.__name__)
 
     def handle_generate(self) -> dict:
         content_type = self.headers.get("Content-Type", "")
-        form = cgi.FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={
-                "REQUEST_METHOD": "POST",
-                "CONTENT_TYPE": content_type,
-                "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
-            },
-        )
+        with monitor_span("generate.form", "Parse generate form", request_id=self.request_id):
+            form = cgi.FieldStorage(
+                fp=self.rfile,
+                headers=self.headers,
+                environ={
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": content_type,
+                    "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
+                },
+            )
 
         run_id = uuid.uuid4().hex
         run_dir = RUN_DIR / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
+        set_monitoring_context(run_id=run_id)
 
         jd_text = (form.getfirst("jd") or "").strip()
         if not jd_text:
@@ -1436,39 +1490,45 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         profile_json = form.getfirst("profile_json") or ""
         profile_data = {}
         if profile_json.strip():
-            profile_data = json.loads(profile_json)
-            base_resume_path = create_template_from_profile(profile_data, run_dir / "profile_template.docx")
+            with monitor_span("generate.template", "Create profile template", run_id=run_id):
+                profile_data = json.loads(profile_json)
+                base_resume_path = create_template_from_profile(profile_data, run_dir / "profile_template.docx")
 
         resume_field = form["resume"] if "resume" in form else None
         if not profile_json.strip() and resume_field is not None and getattr(resume_field, "filename", ""):
-            uploaded_path = save_uploaded_file(
-                resume_field,
-                UPLOAD_DIR / f"{run_id}_{Path(resume_field.filename).name}",
-            )
-            if uploaded_path and uploaded_path.suffix.lower() == ".docx":
-                base_resume_path = make_template_from_resume(uploaded_path, run_dir / "resume_template.docx")
+            with monitor_span("generate.upload_template", "Create uploaded resume template", run_id=run_id):
+                uploaded_path = save_uploaded_file(
+                    resume_field,
+                    UPLOAD_DIR / f"{run_id}_{Path(resume_field.filename).name}",
+                )
+                if uploaded_path and uploaded_path.suffix.lower() == ".docx":
+                    base_resume_path = make_template_from_resume(uploaded_path, run_dir / "resume_template.docx")
 
         skip_pdf = form.getfirst("skip_pdf") == "true"
-        jd_intelligence = extract_jd_intelligence(jd_text, api_key=api_key)
+        with monitor_span("generate.jd_intelligence", "Extract JD intelligence", run_id=run_id):
+            jd_intelligence = extract_jd_intelligence(jd_text, api_key=api_key)
         generation_jd = jd_text + "\n\n" + intelligence_summary(jd_intelligence)
-        result = generate_resume_from_jd(
-            generation_jd,
-            base_resume_path=base_resume_path,
-            output_root=OUTPUT_ROOT,
-            details=details,
-            skip_pdf=skip_pdf,
-            api_key=api_key,
-        )
-        result = copy_version_files(result, run_dir, "v1")
+        with monitor_span("generate.resume", "Generate resume document", run_id=run_id, skip_pdf=skip_pdf):
+            result = generate_resume_from_jd(
+                generation_jd,
+                base_resume_path=base_resume_path,
+                output_root=OUTPUT_ROOT,
+                details=details,
+                skip_pdf=skip_pdf,
+                api_key=api_key,
+            )
+        with monitor_span("generate.version_files", "Copy version files", run_id=run_id):
+            result = copy_version_files(result, run_dir, "v1")
         profile_for_analysis = profile_data if profile_json.strip() else {}
-        keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile_for_analysis, jd_intelligence=jd_intelligence)
-        analysis = score_resume(
-            jd_text,
-            result["structured_resume"],
-            profile_for_analysis,
-            result["pdf_path"],
-            jd_intelligence=jd_intelligence,
-        )
+        with monitor_span("generate.scoring", "Score resume and keyword strategy", run_id=run_id):
+            keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile_for_analysis, jd_intelligence=jd_intelligence)
+            analysis = score_resume(
+                jd_text,
+                result["structured_resume"],
+                profile_for_analysis,
+                result["pdf_path"],
+                jd_intelligence=jd_intelligence,
+            )
         version = {
             "id": "v1",
             "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -1507,7 +1567,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "user_proof": [],
             "playground_notes": [],
         }
-        add_history_item(user_email, history_item)
+        with monitor_span("generate.history_save", "Save generated resume history", run_id=run_id):
+            add_history_item(user_email, history_item)
         response = {
             "run_id": run_id,
             "company": result["company"],
@@ -1622,6 +1683,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         return item
 
     def regenerate_resume_item(self, run_id: str, body: dict) -> dict | None:
+        set_monitoring_context(run_id=run_id)
         item = find_history_item(run_id)
         if not item:
             return None
@@ -1630,7 +1692,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         active_api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not active_api_key:
             raise RegenerationError("Regeneration needs an OpenAI key. Configure OPENAI_API_KEY on the server or add it in the OpenAI API Key field.")
-        jd_intelligence = ensure_item_intelligence(item, api_key=active_api_key)
+        with monitor_span("regenerate.jd_intelligence", "Ensure JD intelligence", run_id=run_id):
+            jd_intelligence = ensure_item_intelligence(item, api_key=active_api_key)
         proof = body.get("proof")
         if isinstance(proof, list):
             item["user_proof"] = proof
@@ -1641,13 +1704,14 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         run_dir.mkdir(parents=True, exist_ok=True)
         augmented_jd = item.get("jd", "")
         previous = active_version(item)
-        current_gaps = build_keyword_gaps(
-            item.get("jd", ""),
-            previous.get("structured_resume", {}),
-            item.get("profile", {}),
-            item.get("user_proof", []),
-            jd_intelligence=jd_intelligence,
-        )
+        with monitor_span("regenerate.keyword_plan", "Build regeneration keyword plan", run_id=run_id, version_id=version_id):
+            current_gaps = build_keyword_gaps(
+                item.get("jd", ""),
+                previous.get("structured_resume", {}),
+                item.get("profile", {}),
+                item.get("user_proof", []),
+                jd_intelligence=jd_intelligence,
+            )
         augmented_jd += "\n\n" + intelligence_summary(jd_intelligence, current_gaps)
         augmented_jd += "\n\nPREVIOUS STRUCTURED RESUME VERSION:\n" + json.dumps(previous.get("structured_resume", {}), indent=2)
         if instruction:
@@ -1657,29 +1721,35 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         profile = source_profile
         details = profile.get("details", {}) if isinstance(profile, dict) else {}
         if profile_has_content(profile):
-            template_path = create_template_from_profile(profile, run_dir / f"{version_id}_template.docx")
+            with monitor_span("regenerate.template", "Create regeneration profile template", run_id=run_id, version_id=version_id):
+                template_path = create_template_from_profile(profile, run_dir / f"{version_id}_template.docx")
         else:
             source_docx = previous.get("docx_path") or item.get("docx_path")
             if not source_docx or not Path(source_docx).exists():
                 raise RegenerationError("Old resume source missing. Generate a fresh resume first.")
             try:
-                template_path = make_template_from_resume(Path(source_docx), run_dir / f"{version_id}_template.docx")
+                with monitor_span("regenerate.legacy_template", "Create regeneration template from existing DOCX", run_id=run_id, version_id=version_id):
+                    template_path = make_template_from_resume(Path(source_docx), run_dir / f"{version_id}_template.docx")
             except Exception as exc:
                 raise RegenerationError(f"Could not prepare the old resume for regeneration: {exc}") from exc
         try:
-            result = generate_resume_from_jd(
-                augmented_jd,
-                base_resume_path=template_path,
-                output_root=OUTPUT_ROOT,
-                details=details,
-                skip_pdf=item.get("skip_pdf", False),
-                api_key=active_api_key,
-            )
-            result = copy_version_files(result, run_dir, version_id)
+            with monitor_span("regenerate.resume", "Generate regenerated resume document", run_id=run_id, version_id=version_id):
+                result = generate_resume_from_jd(
+                    augmented_jd,
+                    base_resume_path=template_path,
+                    output_root=OUTPUT_ROOT,
+                    details=details,
+                    skip_pdf=item.get("skip_pdf", False),
+                    api_key=active_api_key,
+                )
+            with monitor_span("regenerate.version_files", "Copy regenerated version files", run_id=run_id, version_id=version_id):
+                result = copy_version_files(result, run_dir, version_id)
         except Exception as exc:
+            capture_monitoring_exception(exc, run_id=run_id, version_id=version_id, stage="regenerate.resume")
             raise RegenerationError(f"Regeneration failed: {exc}") from exc
-        gaps = build_keyword_gaps(item.get("jd", ""), result["structured_resume"], profile, item.get("user_proof", []), jd_intelligence=jd_intelligence)
-        analysis = score_resume(item.get("jd", ""), result["structured_resume"], profile, result.get("pdf_path"), item.get("user_proof", []), jd_intelligence=jd_intelligence)
+        with monitor_span("regenerate.scoring", "Score regenerated resume", run_id=run_id, version_id=version_id):
+            gaps = build_keyword_gaps(item.get("jd", ""), result["structured_resume"], profile, item.get("user_proof", []), jd_intelligence=jd_intelligence)
+            analysis = score_resume(item.get("jd", ""), result["structured_resume"], profile, result.get("pdf_path"), item.get("user_proof", []), jd_intelligence=jd_intelligence)
         version = {
             "id": version_id,
             "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -1711,56 +1781,61 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             return current
 
         RESULTS[run_id] = result
-        return update_history_item(run_id, apply_update)
+        with monitor_span("regenerate.history_save", "Save regenerated resume version", run_id=run_id, version_id=version_id):
+            return update_history_item(run_id, apply_update)
 
     def serve_download(self, path: str) -> None:
-        parts = path.strip("/").split("/")
-        if len(parts) != 4:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
+        with monitor_span("file.download", "Serve generated file download", path=path):
+            parts = path.strip("/").split("/")
+            if len(parts) != 4:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
 
-        _, _, run_id, kind = parts
-        result = RESULTS.get(run_id)
-        history_item = find_history_item(run_id)
-        version = active_version(history_item or {}) if history_item else {}
-        target = (
-            result.get("docx_path") if kind == "docx" else result.get("pdf_path")
-        ) if result and not history_item else (
-            version.get("docx_path") if kind == "docx" else version.get("pdf_path")
-        )
-        if not target:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
+            _, _, run_id, kind = parts
+            set_monitoring_context(run_id=run_id)
+            result = RESULTS.get(run_id)
+            history_item = find_history_item(run_id)
+            version = active_version(history_item or {}) if history_item else {}
+            target = (
+                result.get("docx_path") if kind == "docx" else result.get("pdf_path")
+            ) if result and not history_item else (
+                version.get("docx_path") if kind == "docx" else version.get("pdf_path")
+            )
+            if not target:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
 
-        file_path = Path(target)
-        if not file_path.exists():
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
+            file_path = Path(target)
+            if not file_path.exists():
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
 
-        body = file_path.read_bytes()
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", MIME_TYPES.get(file_path.suffix, "application/octet-stream"))
-        self.send_header("Content-Disposition", f'attachment; filename="{file_path.name}"')
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+            body = file_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", MIME_TYPES.get(file_path.suffix, "application/octet-stream"))
+            self.send_header("Content-Disposition", f'attachment; filename="{file_path.name}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
     def serve_preview(self, path: str) -> None:
-        parts = path.strip("/").split("/")
-        if len(parts) != 4 or parts[-1] != "pdf":
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        _, _, run_id, _ = parts
-        item = find_history_item(run_id)
-        version = active_version(item or {}) if item else {}
-        target = version.get("pdf_path")
-        if not target:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        file_path = Path(target)
-        if not file_path.exists():
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
+        with monitor_span("file.preview", "Serve generated PDF preview", path=path):
+            parts = path.strip("/").split("/")
+            if len(parts) != 4 or parts[-1] != "pdf":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            _, _, run_id, _ = parts
+            set_monitoring_context(run_id=run_id)
+            item = find_history_item(run_id)
+            version = active_version(item or {}) if item else {}
+            target = version.get("pdf_path")
+            if not target:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            file_path = Path(target)
+            if not file_path.exists():
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
 
         file_size = file_path.stat().st_size
         range_header = self.headers.get("Range", "")
