@@ -727,11 +727,11 @@ function AboutView() {
 }
 
 function PrivacyView() {
-  return <StaticPage title="Privacy Policy" eyebrow="Placeholder"><p>Your profile and generated resumes are stored for your signed-in account so the workspace can remember your job search. Do not paste sensitive information you do not want stored. A full production privacy policy should be reviewed before public launch.</p></StaticPage>;
+  return <StaticPage title="Privacy Policy" eyebrow="Product copy"><p>Your profile and generated resumes are stored for your signed-in account so the workspace can remember your job search. Do not paste sensitive information you do not want stored. A full production privacy policy should be reviewed before public launch.</p></StaticPage>;
 }
 
 function TermsView() {
-  return <StaticPage title="Terms" eyebrow="Placeholder"><p>Hone is a resume generation workspace. Users are responsible for reviewing generated content for accuracy before applying. A full production terms document should be reviewed before public launch.</p></StaticPage>;
+  return <StaticPage title="Terms" eyebrow="Product copy"><p>Hone is a resume generation workspace. Users are responsible for reviewing generated content for accuracy before applying. A full production terms document should be reviewed before public launch.</p></StaticPage>;
 }
 
 function goView(view) {
@@ -746,11 +746,223 @@ function SystemView() {
         <button className="card link-card" onClick={() => goView("profile")}><div className="card-label"><b>Profile</b><span>base resume</span></div><p>Edit the saved foundation used for every resume generation.</p></button>
         <button className="card link-card" onClick={() => goView("settings")}><div className="card-label"><b>Settings</b><span>account</span></div><p>Manage sign out and workspace preferences.</p></button>
         <button className="card link-card" onClick={() => goView("about")}><div className="card-label"><b>About</b><span>Hone</span></div><p>See what the product does and how the workspace is structured.</p></button>
-        <button className="card link-card" onClick={() => goView("privacy")}><div className="card-label"><b>Privacy Policy</b><span>placeholder</span></div><p>Review the current product privacy notes.</p></button>
-        <button className="card link-card" onClick={() => goView("terms")}><div className="card-label"><b>Terms</b><span>placeholder</span></div><p>Review the current product terms notes.</p></button>
+        <button className="card link-card" onClick={() => goView("privacy")}><div className="card-label"><b>Privacy Policy</b><span>trust</span></div><p>Review the current product privacy notes.</p></button>
+        <button className="card link-card" onClick={() => goView("terms")}><div className="card-label"><b>Terms</b><span>use</span></div><p>Review the current product terms notes.</p></button>
       </div>
     </section>
   );
 }
 
-Object.assign(window, { NewApplicationHero, WorkspaceHeader, ScorePanel, PreviewPanel, PlaygroundPanel, RecentStrip, WorkspaceView, HistoryView, AppCard, BaseResumeDrawer, ProfileView, SettingsView, AboutView, PrivacyView, TermsView, SystemView });
+function ProfileView({ snapshot, onOpenDrawer }) {
+  const profile = activeDraftProfile(snapshot);
+  const details = profile.details || {};
+  const stats = [
+    ["Experience", profile.experiences.length],
+    ["Projects", profile.projects.length],
+    ["Education", profile.education.length],
+    ["Certifications", profile.certifications.length],
+  ];
+  const skills = String(profile.skills || "").split(",").map((skill) => skill.trim()).filter(Boolean).slice(0, 14);
+  return (
+    <section className="account-page">
+      <div className="sec-head"><h2>Career foundation</h2><span className="meta">Profile</span></div>
+      <div className="profile-hero card">
+        <div>
+          <div className="card-label"><b>Saved base resume</b><span>{profileHasContent(profile) ? "ready" : "needs setup"}</span></div>
+          <h1>{details.name || "Build your Hone profile"}</h1>
+          <p>{[details.location, details.email, details.phone].filter(Boolean).join(" / ") || "Add identity, experience, projects, skills, education, and certifications once. Hone uses this as the source of truth for every tailored resume."}</p>
+          {details.linkedin && <a className="text-link" href={details.linkedin} target="_blank" rel="noreferrer">LinkedIn</a>}
+        </div>
+        <div className="profile-actions">
+          <button className="btn spark" onClick={onOpenDrawer}><Icon.Save/> Edit base resume</button>
+          <button className="btn ghost" onClick={() => goView("workspace")}><Icon.Spark/> Generate from this profile</button>
+        </div>
+      </div>
+      <div className="profile-page-grid">
+        <div className="card profile-summary">
+          <div className="card-label"><b>Memory map</b><span>used by generation</span></div>
+          <div className="profile-stat-grid">
+            {stats.map(([label, value]) => <div key={label} className="profile-stat"><b>{value}</b><span>{label}</span></div>)}
+          </div>
+          <div className="profile-section-list">
+            <h3>Recent experience</h3>
+            {(profile.experiences.length ? profile.experiences : [{ company: "No experience saved yet", role: "Add your first role from the base resume drawer.", duration: "" }]).slice(0, 4).map((exp, index) => (
+              <div className="profile-row" key={`${exp.company}-${index}`}>
+                <strong>{exp.company || "Company"}</strong>
+                <span>{exp.role || exp.title || "Role"} {exp.duration ? `/ ${exp.duration}` : ""}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card profile-summary">
+          <div className="card-label"><b>Parser support</b><span>skills</span></div>
+          <div className="skill-cloud">
+            {skills.length ? skills.map((skill) => <span key={skill}>{skill}</span>) : <p>Add skills and core competencies so Hone can match job descriptions more accurately.</p>}
+          </div>
+          <div className="divider"></div>
+          <div className="profile-section-list">
+            <h3>Projects</h3>
+            {(profile.projects.length ? profile.projects : [{ title: "No projects saved yet", description: "Add projects to create a stronger ATS expansion zone." }]).slice(0, 3).map((project, index) => (
+              <div className="profile-row" key={`${project.title}-${index}`}>
+                <strong>{project.title || "Project"}</strong>
+                <span>{project.description || "No description yet."}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SettingsView({ snapshot }) {
+  const user = snapshot?.user || {};
+  const storage = snapshot?.storage || {};
+  return (
+    <section className="account-page">
+      <div className="sec-head"><h2>Settings</h2><span className="meta">Account and workspace</span></div>
+      <div className="settings-grid">
+        <div className="card settings-card">
+          <div className="card-label"><b>Account</b><span>Google</span></div>
+          <h3>{user.name || "Signed in user"}</h3>
+          <p>{user.email || "Google is the supported sign-in method for now. Email magic links are not enabled yet."}</p>
+          <button className="btn ink small" onClick={() => window.HoneBridge?.logout?.()}><Icon.LogOut/> Log out</button>
+        </div>
+        <div className="card settings-card">
+          <div className="card-label"><b>Runtime health</b><span>live</span></div>
+          <div className="health-list">
+            <div><span>OpenAI key</span><b>{snapshot?.openaiConfigured ? "Configured" : "Missing"}</b></div>
+            <div><span>Sentry monitoring</span><b>{snapshot?.sentryConfigured ? "Active" : "Not active"}</b></div>
+            <div><span>Output storage</span><b>{storage.output_root_exists ? "Mounted" : "Check setup"}</b></div>
+            <div><span>History file</span><b>{storage.history_exists ? "Present" : "New / empty"}</b></div>
+          </div>
+        </div>
+        <div className="card settings-card">
+          <div className="card-label"><b>Preferences</b><span>v1</span></div>
+          <p>Hone keeps your base profile and generated resumes scoped to your signed-in Google account. Generated files remain unbranded and editable.</p>
+          <div className="settings-actions">
+            <button className="btn ghost small" onClick={() => goView("data")}>Data controls</button>
+            <button className="btn ghost small" onClick={() => goView("support")}>Support</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StaticPage({ title, eyebrow, children }) {
+  return (
+    <section className="legal-page">
+      <div className="sec-head"><h2>{title}</h2><span className="meta">{eyebrow}</span></div>
+      <div className="legal-layout">
+        <aside className="legal-index card">
+          <span>/ index</span>
+          <a href="#about" onClick={(event) => { event.preventDefault(); goView("about"); }}>About</a>
+          <a href="#privacy" onClick={(event) => { event.preventDefault(); goView("privacy"); }}>Privacy</a>
+          <a href="#terms" onClick={(event) => { event.preventDefault(); goView("terms"); }}>Terms</a>
+          <a href="#support" onClick={(event) => { event.preventDefault(); goView("support"); }}>Support</a>
+        </aside>
+        <article className="legal-card card">{children}</article>
+      </div>
+    </section>
+  );
+}
+
+function AboutView() {
+  return <StaticPage title="About Hone" eyebrow="Product">
+    <h3>Hone sharpens how people show up for work.</h3>
+    <p>Hone is a resume tailoring workspace for ambitious job seekers who do not want to rebuild their story from scratch for every application. You create one career foundation, paste a job description, and Hone generates a tailored DOCX/PDF resume while saving the company, role, JD, files, score, and versions into history.</p>
+    <h3>What Hone does</h3>
+    <p>Hone reads the job, maps the role requirements against your saved profile, rewrites the resume around the strongest defensible evidence, and gives you a playground to refine versions without losing the original.</p>
+    <h3>What Hone does not do</h3>
+    <p>Hone is not a hiring guarantee, legal advisor, or replacement for your judgment. You are responsible for reviewing every generated resume before applying.</p>
+  </StaticPage>;
+}
+
+function PrivacyView() {
+  return <StaticPage title="Privacy Policy" eyebrow="Product copy">
+    <p className="legal-note">This policy is product-ready copy for launch preparation, but it should be reviewed by a qualified professional before large-scale public release.</p>
+    <h3>Information Hone stores</h3>
+    <p>Hone stores your Google account identity, saved base profile, pasted job descriptions, generated resume versions, file paths, scores, keyword strategy data, and application history so the workspace can remember your job search.</p>
+    <h3>How the information is used</h3>
+    <p>Your data is used to generate tailored resumes, display previews, preserve history, improve troubleshooting, and keep each account separated from other users. Hone does not intentionally add product branding inside generated resume files.</p>
+    <h3>Third-party services</h3>
+    <p>Hone may use Google sign-in, OpenAI for resume generation, Render or another host for deployment, Sentry for error/performance monitoring, and Google Analytics/Tag Manager for site analytics. Monitoring should not include resume text, job descriptions, API keys, or full profile bodies.</p>
+    <h3>Your controls</h3>
+    <p>You can edit your profile, clear local drafts, sign out, and request account or data deletion through Support. Do not paste sensitive information you do not want stored.</p>
+  </StaticPage>;
+}
+
+function TermsView() {
+  return <StaticPage title="Terms" eyebrow="Product copy">
+    <p className="legal-note">These terms are practical product copy and should be reviewed before public launch.</p>
+    <h3>Use of Hone</h3>
+    <p>Hone helps users create tailored resume drafts from saved career information and job descriptions. You agree to use the product lawfully and avoid submitting information you do not have the right to use.</p>
+    <h3>Generated content</h3>
+    <p>AI output can be incomplete, incorrect, or too aggressive. You are responsible for reviewing, correcting, and approving every resume before submitting it to an employer.</p>
+    <h3>No employment guarantee</h3>
+    <p>Hone does not guarantee interviews, offers, compensation outcomes, ATS scores, or employer responses.</p>
+    <h3>Availability</h3>
+    <p>The service may depend on third-party providers for authentication, AI generation, hosting, monitoring, and file conversion. Features may be unavailable during outages or maintenance.</p>
+  </StaticPage>;
+}
+
+function SupportView() {
+  return <StaticPage title="Support" eyebrow="Help">
+    <h3>How to get help</h3>
+    <p>If something breaks, include the page you were on, the action you clicked, the approximate time, your browser, and any request ID shown in the error. For generation issues, include the company and role, but do not send private resume details unless you are comfortable sharing them.</p>
+    <h3>Common checks</h3>
+    <ul>
+      <li>Refresh the page after a deployment finishes.</li>
+      <li>Confirm your base profile is saved before generating.</li>
+      <li>Use Open PDF if the embedded preview fails.</li>
+      <li>Check Settings for OpenAI, storage, and monitoring health.</li>
+    </ul>
+  </StaticPage>;
+}
+
+function DataControlsView({ snapshot }) {
+  const profile = activeDraftProfile(snapshot);
+  function exportProfile() {
+    const blob = new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "hone-profile.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+  function clearDraft() {
+    window.HoneDraftProfile = null;
+    alert("Local unsaved draft cleared. Your saved profile was not deleted.");
+  }
+  return (
+    <section className="account-page">
+      <div className="sec-head"><h2>Data controls</h2><span className="meta">Profile and history</span></div>
+      <div className="settings-grid">
+        <div className="card settings-card"><div className="card-label"><b>Export</b><span>JSON</span></div><p>Download a copy of your saved profile data as JSON for backup or review.</p><button className="btn spark small" onClick={exportProfile}><Icon.Download/> Export profile JSON</button></div>
+        <div className="card settings-card"><div className="card-label"><b>Local draft</b><span>browser</span></div><p>Clear the unsaved browser draft if stale profile edits are confusing the workspace. This does not delete saved server data.</p><button className="btn ghost small" onClick={clearDraft}>Clear local draft</button></div>
+        <div className="card settings-card danger-card"><div className="card-label"><b>Deletion</b><span>manual</span></div><p>Account deletion is handled manually in this version. Contact support with your Google account email to request profile, history, and generated file removal.</p><button className="btn ink small" onClick={() => goView("support")}>Request help</button></div>
+      </div>
+    </section>
+  );
+}
+
+function SystemView() {
+  return (
+    <section>
+      <div className="sec-head"><h2>System</h2><span className="meta">Product and account pages</span></div>
+      <div className="sys-grid">
+        <button className="card link-card" onClick={() => goView("profile")}><div className="card-label"><b>Profile</b><span>base resume</span></div><p>Edit the saved foundation used for every resume generation.</p></button>
+        <button className="card link-card" onClick={() => goView("settings")}><div className="card-label"><b>Settings</b><span>account</span></div><p>Manage sign out, runtime health, and workspace preferences.</p></button>
+        <button className="card link-card" onClick={() => goView("about")}><div className="card-label"><b>About</b><span>Hone</span></div><p>See what the product does and how the workspace is structured.</p></button>
+        <button className="card link-card" onClick={() => goView("privacy")}><div className="card-label"><b>Privacy Policy</b><span>trust</span></div><p>Review how Hone stores profile, JD, generated files, analytics, and monitoring data.</p></button>
+        <button className="card link-card" onClick={() => goView("terms")}><div className="card-label"><b>Terms</b><span>use</span></div><p>Review user responsibilities, AI limitations, and service expectations.</p></button>
+        <button className="card link-card" onClick={() => goView("support")}><div className="card-label"><b>Support</b><span>help</span></div><p>Get troubleshooting guidance and the details to include in bug reports.</p></button>
+        <button className="card link-card" onClick={() => goView("data")}><div className="card-label"><b>Data Controls</b><span>account</span></div><p>Export your profile, clear local drafts, and see what deletion support requires.</p></button>
+      </div>
+    </section>
+  );
+}
+
+Object.assign(window, { NewApplicationHero, WorkspaceHeader, ScorePanel, PreviewPanel, PlaygroundPanel, RecentStrip, WorkspaceView, HistoryView, AppCard, BaseResumeDrawer, ProfileView, SettingsView, AboutView, PrivacyView, TermsView, SupportView, DataControlsView, SystemView });

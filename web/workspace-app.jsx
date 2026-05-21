@@ -6,9 +6,10 @@ const primaryTabs = [
   ["workspace", "Workspace", <Icon.Folder/>, "W"],
   ["history", "History", <Icon.History/>, "H"],
   ["profile", "Profile", <Icon.Save/>, "P"],
-  ["settings", "Settings", <Icon.System/>, "G"],
   ["system", "System", <Icon.System/>, "S"],
 ];
+
+const routeViews = new Set(["workspace", "history", "profile", "settings", "system", "about", "privacy", "terms", "support", "data"]);
 
 function Nav({ view, onView, onOpenDrawer, user }) {
   const displayName = user?.name || user?.email || "Workspace";
@@ -82,6 +83,10 @@ function App() {
   const snapshot = useHoneState();
 
   uE(() => {
+    const viewFromHash = () => {
+      const next = (window.location.hash || "#workspace").replace("#", "");
+      if (routeViews.has(next)) setView(next);
+    };
     const onKey = (e) => {
       if (e.target.matches('input, textarea')) return;
       if (e.key === 'w' || e.key === 'W') setView('workspace');
@@ -91,12 +96,21 @@ function App() {
       if (e.key === 'g' || e.key === 'G') setView('settings');
       if (e.key === 'b' || e.key === 'B') setDrawerOpen(true);
     };
-    const onRoute = (event) => setView(event.detail || "workspace");
+    const onRoute = (event) => {
+      const next = event.detail || "workspace";
+      if (routeViews.has(next)) {
+        setView(next);
+        if (window.location.hash !== `#${next}`) window.history.replaceState(null, "", `#${next}`);
+      }
+    };
+    viewFromHash();
     window.addEventListener('keydown', onKey);
     window.addEventListener('hone:view', onRoute);
+    window.addEventListener('hashchange', viewFromHash);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('hone:view', onRoute);
+      window.removeEventListener('hashchange', viewFromHash);
     };
   }, []);
 
@@ -147,6 +161,8 @@ function App() {
           {view === 'about' && <AboutView/>}
           {view === 'privacy' && <PrivacyView/>}
           {view === 'terms' && <TermsView/>}
+          {view === 'support' && <SupportView/>}
+          {view === 'data' && <DataControlsView snapshot={snapshot}/>}
           {view === 'system'  && <SystemView/>}
         </div>
       </div>

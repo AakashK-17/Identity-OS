@@ -71,6 +71,10 @@ const state = {
   history: [],
   googleClientId: "",
   openaiConfigured: false,
+  sentryConfigured: false,
+  buildCommit: "",
+  buildTimestamp: "",
+  storage: {},
   googleLoaded: false,
   profile: null,
   identityScenesStarted: false,
@@ -87,6 +91,10 @@ function emitHoneState() {
       profile: state.profile,
       activeResume: state.activeResume,
       openaiConfigured: state.openaiConfigured,
+      sentryConfigured: state.sentryConfigured,
+      buildCommit: state.buildCommit,
+      buildTimestamp: state.buildTimestamp,
+      storage: state.storage,
     },
   }));
 }
@@ -98,6 +106,10 @@ function getHoneSnapshot() {
     profile: state.profile,
     activeResume: state.activeResume,
     openaiConfigured: state.openaiConfigured,
+    sentryConfigured: state.sentryConfigured,
+    buildCommit: state.buildCommit,
+    buildTimestamp: state.buildTimestamp,
+    storage: state.storage,
   };
 }
 
@@ -1279,8 +1291,11 @@ apiFetch("/api/config", {}, "loading app configuration")
       if (googleClientIdInput) googleClientIdInput.value = state.googleClientId;
     }
     state.openaiConfigured = Boolean(config.openai_configured);
+    state.sentryConfigured = Boolean(config.sentry_configured);
     state.buildCommit = config.build_commit || "";
     state.buildTimestamp = config.build_timestamp || "";
+    state.storage = config.storage || {};
+    emitHoneState();
   })
   .then(() => {
     if (!signinModal.classList.contains("hidden")) {

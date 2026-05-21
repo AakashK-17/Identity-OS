@@ -327,6 +327,62 @@ body.signed-in #hone-workspace-root {
   border-top: 1px solid #cbc6b4;
 }
 
+.public-legal {
+  padding-top: 64px;
+  padding-bottom: 36px;
+}
+
+.public-legal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.legal-copy-card {
+  max-width: 980px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.58);
+  padding: clamp(20px, 3vw, 34px);
+  box-shadow: 0 28px 80px rgba(30,30,28,0.08);
+}
+
+.legal-copy-card p {
+  color: var(--muted);
+  line-height: 1.75;
+  margin: 0 0 14px;
+}
+
+.legal-copy-card p:last-child { margin-bottom: 0; }
+
+.legal-copy-card b { color: var(--ink); }
+
+.public-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px clamp(22px, 4vw, 56px) 42px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.public-footer nav {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.public-footer a {
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.public-footer span {
+  font-size: 0.78rem;
+}
+
 .sec-head {
   display: grid;
   grid-template-columns: 1fr 1.35fr;
@@ -2991,9 +3047,15 @@ body,
   }
 
   .public-block .features.system-grid,
+  .public-legal-grid,
   .public-block .steps,
   .format-grid {
     grid-template-columns: 1fr;
+  }
+
+  .public-footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .system-grid .feature-card {
