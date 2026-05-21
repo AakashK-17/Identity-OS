@@ -686,72 +686,11 @@ function BaseResumeDrawer({ open, onClose, snapshot }) {
   );
 }
 
-function ProfileView({ snapshot, onOpenDrawer }) {
-  const profile = activeDraftProfile(snapshot);
-  const details = profile.details || {};
-  return (
-    <section>
-      <div className="sec-head"><h2>Profile</h2><span className="meta">Your saved base resume</span></div>
-      <div className="profile-page-grid">
-        <div className="card profile-summary">
-          <div className="card-label"><b>Identity</b><span>{profileHasContent(profile) ? "ready" : "empty"}</span></div>
-          <h1>{details.name || "New Hone profile"}</h1>
-          <p>{[details.location, details.email, details.phone].filter(Boolean).join(" · ") || "Add your identity details to begin."}</p>
-          <button className="btn spark" onClick={onOpenDrawer}><Icon.Save/> Edit base resume</button>
-        </div>
-        <div className="card profile-summary"><div className="card-label"><b>Resume memory</b><span>source of truth</span></div><p>{profile.experiences.length} experiences, {profile.projects.length} projects, {profile.education.length} education items, and {profile.certifications.length} certifications saved.</p></div>
-      </div>
-    </section>
-  );
-}
-
-function SettingsView({ snapshot }) {
-  const user = snapshot?.user || {};
-  return (
-    <section>
-      <div className="sec-head"><h2>Settings</h2><span className="meta">Account and preferences</span></div>
-      <div className="sys-grid">
-        <div className="card settings-card"><div className="card-label"><b>Account</b><span>Google</span></div><h3>{user.name || "Signed in user"}</h3><p>{user.email || "Google is the supported sign-in method for now."}</p><button className="btn ink small" onClick={() => window.HoneBridge?.logout?.()}><Icon.LogOut/> Log out</button></div>
-        <div className="card settings-card"><div className="card-label"><b>Preferences</b><span>v1</span></div><p>Hone keeps your base profile and generated resumes scoped to your signed-in account. Email sign-up is disabled until a real email provider is connected.</p></div>
-      </div>
-    </section>
-  );
-}
-
-function StaticPage({ title, eyebrow, children }) {
-  return <section><div className="sec-head"><h2>{title}</h2><span className="meta">{eyebrow}</span></div><div className="legal-card card">{children}</div></section>;
-}
-
-function AboutView() {
-  return <StaticPage title="About Hone" eyebrow="Product"><p>Hone turns a saved base resume into tailored, ATS-aware resumes for each role. It keeps every company, role, job description, generated DOCX, PDF, score, and version organized in one workspace.</p></StaticPage>;
-}
-
-function PrivacyView() {
-  return <StaticPage title="Privacy Policy" eyebrow="Product copy"><p>Your profile and generated resumes are stored for your signed-in account so the workspace can remember your job search. Do not paste sensitive information you do not want stored. A full production privacy policy should be reviewed before public launch.</p></StaticPage>;
-}
-
-function TermsView() {
-  return <StaticPage title="Terms" eyebrow="Product copy"><p>Hone is a resume generation workspace. Users are responsible for reviewing generated content for accuracy before applying. A full production terms document should be reviewed before public launch.</p></StaticPage>;
-}
 
 function goView(view) {
   window.dispatchEvent(new CustomEvent("hone:view", { detail: view }));
 }
 
-function SystemView() {
-  return (
-    <section>
-      <div className="sec-head"><h2>System</h2><span className="meta">Product and account pages</span></div>
-      <div className="sys-grid">
-        <button className="card link-card" onClick={() => goView("profile")}><div className="card-label"><b>Profile</b><span>base resume</span></div><p>Edit the saved foundation used for every resume generation.</p></button>
-        <button className="card link-card" onClick={() => goView("settings")}><div className="card-label"><b>Settings</b><span>account</span></div><p>Manage sign out and workspace preferences.</p></button>
-        <button className="card link-card" onClick={() => goView("about")}><div className="card-label"><b>About</b><span>Hone</span></div><p>See what the product does and how the workspace is structured.</p></button>
-        <button className="card link-card" onClick={() => goView("privacy")}><div className="card-label"><b>Privacy Policy</b><span>trust</span></div><p>Review the current product privacy notes.</p></button>
-        <button className="card link-card" onClick={() => goView("terms")}><div className="card-label"><b>Terms</b><span>use</span></div><p>Review the current product terms notes.</p></button>
-      </div>
-    </section>
-  );
-}
 
 function ProfileView({ snapshot, onOpenDrawer }) {
   const profile = activeDraftProfile(snapshot);
