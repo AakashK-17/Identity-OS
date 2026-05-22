@@ -203,7 +203,7 @@ function SkeletonLines({ rows = 4 }) {
   );
 }
 
-function ScorePanel({ analysis = {}, loading = false }) {
+function ScorePanel({ analysis = {}, keywordGaps = {}, loading = false }) {
   const ref = React.useRef(null);
   useTilt(ref, { max: 4 });
   const scores = analysis.scores || {};
@@ -215,7 +215,7 @@ function ScorePanel({ analysis = {}, loading = false }) {
     ["Format", scores.format_quality || 0, "sage"],
     ["Interview defense", scores.interview_defensibility || 0, "steel"],
   ];
-  const gaps = analysis.keyword_gaps || {};
+  const gaps = keywordGaps || analysis.keyword_gaps || {};
   const hasScores = Boolean(analysis?.scores);
   return (
     <div className={"card tilt" + (loading ? " is-loading" : "")} ref={ref}>
@@ -336,6 +336,8 @@ function PlaygroundPanel({ item, versions, active, onVersion, onRegenerate, rege
   const research = item?.research_dossier || {};
   const company = research.target_company || item?.company_research || {};
   const role = research.target_role || {};
+  const companyName = company.name || item?.company || "";
+  const companyUnknown = !companyName || /^(unknown|unknown company|company research|jd alignment|target company)$/i.test(companyName);
   const matrix = item?.experience_alignment_matrix || {};
   const matrixEntries = matrix.entries || [];
   const directHooks = matrixEntries.filter((entry) => entry.alignment_type === "direct_match" || entry.alignment_type === "transferable_workflow").slice(0, 5);
@@ -352,8 +354,8 @@ function PlaygroundPanel({ item, versions, active, onVersion, onRegenerate, rege
           <div className="research-grid">
             <div>
               <div className="collabel">Target company</div>
-              <strong>{company.name || item?.company || "Unknown company"}</strong>
-              <p>{company.domain || "Domain inferred from JD"}</p>
+              <strong>{companyUnknown ? "Company was not detected from this JD" : companyName}</strong>
+              {!companyUnknown && <p>{company.domain || "Domain inferred from JD"}</p>}
               {hasWebResearch && company.public_summary && <span>{company.public_summary}</span>}
             </div>
             <div>
@@ -488,7 +490,7 @@ function WorkspaceView({ onGenerate, onOpenDrawer, onGoHistory, snapshot }) {
       <div className="active-divider"><span className="pip"></span><span>Active artifact</span><span className="line"></span><span>{active ? `${active.toUpperCase()} active` : "No active artifact"}</span></div>
       <WorkspaceHeader item={item} versions={versions} active={active} onVersion={switchVersion}/>
       <div className="ws-grid">
-        <ScorePanel analysis={item?.analysis || {}} loading={processingMode !== "idle" || !item}/>
+        <ScorePanel analysis={item?.analysis || {}} keywordGaps={item?.keyword_gaps || {}} loading={processingMode !== "idle" || !item}/>
         <PreviewPanel item={item} processingMode={processingMode}/>
         <PlaygroundPanel item={item} versions={versions} active={active} onVersion={switchVersion} onRegenerate={regenerate} regenerating={regenerating} processingMode={processingMode}/>
       </div>

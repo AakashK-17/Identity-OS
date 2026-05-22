@@ -129,7 +129,13 @@ BAD_METADATA_PATTERNS = [
 LINKEDIN_SEPARATOR_PATTERN = r"\s+(?:\||\?|\ufffd|\u00b7|\u2022)\s+"
 BAD_DISPLAY_VALUES = {
     "",
+    "unknown",
     "company",
+    "company research",
+    "jd alignment",
+    "target company",
+    "role intent",
+    "sources",
     "role",
     "job",
     "title",
@@ -1673,6 +1679,7 @@ def generate_resume_from_jd(
     details: dict | None = None,
     skip_pdf: bool = False,
     api_key: str | None = None,
+    metadata_jd_text: str | None = None,
 ) -> dict:
     if not base_resume_path.exists():
         raise FileNotFoundError(f"Base resume not found: {base_resume_path}")
@@ -1684,7 +1691,7 @@ def generate_resume_from_jd(
     data = call_llm(base_resume_text, jd_text, model, api_key=api_key)
 
     with monitor_span("metadata.extract", "Extract company and role metadata"):
-        metadata = extract_job_metadata(jd_text, api_key=api_key)
+        metadata = extract_job_metadata(metadata_jd_text or jd_text, api_key=api_key)
     company = metadata["company_display"]
     role = metadata["role_display"]
     company_filename = metadata["company_filename"]

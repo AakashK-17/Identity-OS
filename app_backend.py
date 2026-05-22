@@ -222,7 +222,13 @@ def add_history_item(email: str, item: dict) -> None:
 
 BAD_HISTORY_METADATA = {
     "",
+    "unknown",
     "company",
+    "company research",
+    "jd alignment",
+    "target company",
+    "role intent",
+    "sources",
     "role",
     "target role",
     "unknown company",
@@ -259,6 +265,10 @@ def repair_history_metadata_item(item: dict) -> bool:
     changed = False
     company = metadata.get("company_display", "Unknown Company")
     role = metadata.get("role_display", "Target Role")
+    if metadata_value_is_bad(company, "company"):
+        company = "Unknown Company"
+    if metadata_value_is_bad(role, "role"):
+        role = "Target Role"
     if company and company != item.get("company"):
         item["company"] = company
         changed = True
@@ -388,6 +398,30 @@ def playground_payload(item: dict) -> dict:
     payload["research_sources"] = item.get("research_sources", [])
     payload["research_version"] = item.get("research_version")
     return payload
+
+
+def keyword_strategy_is_empty(strategy: dict | None) -> bool:
+    if not isinstance(strategy, dict) or not strategy:
+        return True
+    if not strategy.get("keyword_plan") and not strategy.get("important_terms"):
+        return True
+    buckets = ["covered", "bridge_keywords", "weak_terms"]
+    return not any(strategy.get(bucket) for bucket in buckets)
+
+
+def item_needs_keyword_repair(item: dict, jd_intelligence: dict) -> bool:
+    version = active_version(item)
+    plan = jd_intelligence.get("keyword_plan") or jd_intelligence.get("important_terms") or []
+    if not plan:
+        return False
+    gaps = version.get("keyword_gaps") or item.get("keyword_gaps") or {}
+    analysis = version.get("analysis") or item.get("analysis") or {}
+    scores = analysis.get("scores", {}) if isinstance(analysis, dict) else {}
+    if keyword_strategy_is_empty(gaps):
+        return True
+    if int(scores.get("ats_keyword_alignment") or 0) == 0 and plan:
+        return True
+    return False
 
 
 def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
@@ -1713,7 +1747,11 @@ def intelligence_summary(jd_intelligence: dict, strategy: dict | None = None) ->
 
 def ensure_item_intelligence(item: dict, api_key: str | None = None) -> dict:
     existing = item.get("jd_intelligence")
-    if existing and existing.get("parser_version") == JD_INTELLIGENCE_VERSION:
+    if (
+        existing
+        and existing.get("parser_version") == JD_INTELLIGENCE_VERSION
+        and (existing.get("keyword_plan") or existing.get("important_terms"))
+    ):
         return existing
     item["jd_intelligence"] = extract_jd_intelligence(item.get("jd", ""), api_key=api_key, force_refresh=True)
     return item["jd_intelligence"]
@@ -1961,6 +1999,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 details=details,
                 skip_pdf=skip_pdf,
                 api_key=api_key,
+                metadata_jd_text=jd_text,
             )
         with monitor_span("generate.version_files", "Copy version files", run_id=run_id):
             result = copy_version_files(result, run_dir, "v1")
@@ -2055,8 +2094,12 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         jd_intelligence = item.get("jd_intelligence") or {}
         if jd_intelligence.get("parser_version") != JD_INTELLIGENCE_VERSION:
             item = update_history_item(run_id, lambda current: self.rescore_resume_item(current)) or item
-        if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
-            item = update_history_item(run_id, self.ensure_research_for_item) or item
+        if (
+            not item.get("research_dossier")
+            or item.get("research_version") != RESEARCH_VERSION
+            or item_needs_keyword_repair(item, ensure_item_intelligence(item))
+        ):
+            item = update_history_item(run_id, self.repair_playground_item) or item
         json_response(self, HTTPStatus.OK, playground_payload(item))
 
     def handle_resume_action(self, path: str) -> None:
@@ -2110,6 +2153,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         item["analysis"] = analysis
         version["keyword_gaps"] = gaps
         version["analysis"] = analysis
+        version["jd_intelligence"] = jd_intelligence
         return item
 
     def activate_resume_version(self, item: dict, body: dict) -> dict:
@@ -2130,6 +2174,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
     def rescore_resume_item(self, item: dict) -> dict:
         item = normalize_resume_item(item)
         jd_intelligence = ensure_item_intelligence(item)
+        item["jd_intelligence"] = jd_intelligence
         version = active_version(item)
         proof = item.get("user_proof", [])
         gaps = build_keyword_gaps(item.get("jd", ""), version.get("structured_resume", {}), item.get("profile", {}), proof, jd_intelligence=jd_intelligence)
@@ -2138,6 +2183,18 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         item["analysis"] = analysis
         version["keyword_gaps"] = gaps
         version["analysis"] = analysis
+        return item
+
+    def repair_playground_item(self, item: dict) -> dict:
+        item = self.rescore_resume_item(item) if item_needs_keyword_repair(item, ensure_item_intelligence(item)) else normalize_resume_item(item)
+        jd_intelligence = ensure_item_intelligence(item)
+        if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
+            item["research_dossier"] = extract_research_dossier(item.get("jd", ""), item.get("profile", {}), jd_intelligence, api_key=os.environ.get("OPENAI_API_KEY"))
+            item["company_research"] = item["research_dossier"].get("target_company", {})
+            item["research_sources"] = item["research_dossier"].get("sources", [])
+            item["research_version"] = item["research_dossier"].get("research_version")
+        if not item.get("experience_alignment_matrix") or item.get("experience_alignment_matrix", {}).get("alignment_version") != RESEARCH_VERSION:
+            item["experience_alignment_matrix"] = build_experience_alignment_matrix(item.get("profile", {}), jd_intelligence, item.get("research_dossier", {}))
         return item
 
     def ensure_research_for_item(self, item: dict) -> dict:
@@ -2220,6 +2277,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                     details=details,
                     skip_pdf=item.get("skip_pdf", False),
                     api_key=active_api_key,
+                    metadata_jd_text=item.get("jd", ""),
                 )
             with monitor_span("regenerate.version_files", "Copy regenerated version files", run_id=run_id, version_id=version_id):
                 result = copy_version_files(result, run_dir, version_id)
