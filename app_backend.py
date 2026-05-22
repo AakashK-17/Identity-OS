@@ -71,7 +71,7 @@ OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESULTS: dict[str, dict] = {}
 JD_INTELLIGENCE_VERSION = 6
-RESEARCH_VERSION = 1
+RESEARCH_VERSION = 2
 BUILD_COMMIT = os.environ.get("RENDER_GIT_COMMIT", "")
 BUILD_TIMESTAMP = os.environ.get("RENDER_DEPLOYED_AT", "")
 
@@ -522,13 +522,14 @@ def deterministic_research_dossier(company: str, role: str, prior_companies: lis
     clusters = sorted({item.get("semantic_cluster") for item in plan if item.get("semantic_cluster")})
     return {
         "research_version": RESEARCH_VERSION,
-        "source": "deterministic",
+        "source": "jd_interpretation",
+        "status": "Research unavailable; generation continued" if os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"} else "Using JD-only alignment",
         "target_company": {
             "name": company or "Unknown Company",
             "domain": clusters[0] if clusters else "unknown",
             "products_services": [],
             "operating_model": "",
-            "public_summary": "Live company research was not available; Hone used the JD keyword plan and saved profile instead.",
+            "public_summary": "",
         },
         "target_role": {
             "title": role or "Target Role",
@@ -585,6 +586,7 @@ Rules:
         payload["sources"] = (payload.get("sources") or []) + response_sources(response)
         payload["research_version"] = RESEARCH_VERSION
         payload["source"] = "openai_web_search"
+        payload["status"] = "Web research active"
         payload["created_at"] = datetime.now().isoformat(timespec="seconds")
         return payload
     except Exception as exc:
@@ -595,9 +597,13 @@ Rules:
 
 def extract_research_dossier(jd_text: str, profile: dict, jd_intelligence: dict, api_key: str | None = None) -> dict:
     research_enabled = os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"}
-    metadata = extract_job_metadata(jd_text, api_key=api_key, prefer_ai=research_enabled)
+    metadata = extract_job_metadata(jd_text, api_key=api_key, prefer_ai=bool(api_key or os.environ.get("OPENAI_API_KEY")))
     company = metadata.get("company_display", "Unknown Company")
     role = metadata.get("role_display", "Target Role")
+    if metadata_value_is_bad(company, "company"):
+        company = "Unknown Company"
+    if metadata_value_is_bad(role, "role"):
+        role = "Target Role"
     prior_companies = profile_company_names(profile)
     key = research_cache_key(company, role, prior_companies, jd_intelligence)
     cache = load_research_cache()
@@ -615,8 +621,14 @@ def extract_research_dossier(jd_text: str, profile: dict, jd_intelligence: dict,
         "metadata_source": metadata.get("metadata_source"),
         "metadata_confidence": metadata.get("metadata_confidence"),
     }
-    cache[key] = dossier
-    save_research_cache(cache)
+    should_cache = (
+        dossier.get("source") == "openai_web_search"
+        or company != "Unknown Company"
+        or role != "Target Role"
+    )
+    if should_cache:
+        cache[key] = dossier
+        save_research_cache(cache)
     return dossier
 
 
@@ -632,11 +644,58 @@ def meaningful_tokens(text: str) -> set[str]:
     }
 
 
+def generic_alignment_signal(term: str, category: str) -> bool:
+    lower = (term or "").lower().strip()
+    generic_patterns = [
+        r"\b\d+\+?\s*years?\b",
+        r"\bagency environment\b",
+        r"\binvestment team\b",
+        r"\bteam ownership\b",
+        r"\bownership\b",
+        r"\bseniority\b",
+        r"\bstakeholders?\b",
+        r"\bcollaborat(?:e|ion)\b",
+        r"\bcommunication\b",
+        r"\bleadership\b",
+        r"\bcomfortable\b",
+        r"\bfast-paced\b",
+        r"\bcompetitive monitoring approaches\b",
+        r"\bmedia landscape\b",
+    ]
+    if any(re.search(pattern, lower) for pattern in generic_patterns):
+        return True
+    if category in {"stakeholder_scope", "seniority_signals"} and len(meaningful_tokens(lower)) < 3:
+        return True
+    return False
+
+
+def bridgeable_signal(term: str, category: str) -> bool:
+    if generic_alignment_signal(term, category):
+        return False
+    if category in {"tools_platforms", "methods_frameworks"}:
+        return True
+    if category == "functional_work":
+        return len(meaningful_tokens(term)) >= 2
+    concrete_tokens = {
+        "research", "forecasting", "modeling", "segmentation", "dashboard", "reporting",
+        "analytics", "experimentation", "survey", "etl", "pipeline", "optimization",
+        "analysis", "monitoring", "reconciliation", "personalization", "targeting",
+    }
+    return bool(meaningful_tokens(term) & concrete_tokens)
+
+
 def choose_alignment_hook(signal: dict, graph: dict) -> dict:
     term = signal_term(signal)
     category = signal.get("category", "")
     term_lower = term.lower()
     term_tokens = meaningful_tokens(term)
+    if generic_alignment_signal(term, category):
+        return {
+            "alignment_type": "weak_or_unsupported",
+            "candidate_hook": "",
+            "recommended_section": "keyword_strategy",
+            "rationale": "Generic tenure, team, or environment language should not be converted into a project or employment claim.",
+        }
     for experience in graph.get("experiences", []):
         text = experience.get("text", "")
         lower = text.lower()
@@ -671,19 +730,19 @@ def choose_alignment_hook(signal: dict, graph: dict) -> dict:
         if score > best_score:
             best = experience
             best_score = score
-    if best and best_score:
+    if best and best_score >= 2:
         return {
             "alignment_type": "transferable_workflow",
             "candidate_hook": f"{best.get('role') or 'Experience'} at {best.get('company') or 'prior role'}",
             "recommended_section": "experience",
             "rationale": "Saved work shares functional language with the JD and can be reframed without changing the experience.",
         }
-    if category in {"functional_work", "methods_frameworks", "stakeholder_scope", "seniority_signals"}:
+    if bridgeable_signal(term, category):
         return {
             "alignment_type": "bridge_project",
             "candidate_hook": "project expansion zone",
             "recommended_section": "projects",
-            "rationale": "No direct profile hook was found; use a project/use-case bridge instead of overstating employment history.",
+            "rationale": "No direct profile hook was found; use a concrete project/use-case bridge instead of overstating employment history.",
         }
     return {
         "alignment_type": "weak_or_unsupported",
@@ -727,7 +786,8 @@ def research_alignment_summary(research_dossier: dict, alignment_matrix: dict) -
         "RESEARCH-FIRST ALIGNMENT DOSSIER:",
         f"- Target company: {company.get('name', 'Unknown Company')}",
         f"- Company domain: {company.get('domain', 'unknown')}",
-        f"- Public company context: {company.get('public_summary', '')}",
+        f"- Research status: {(research_dossier or {}).get('status', 'Using JD-only alignment')}",
+        f"- Public company context: {company.get('public_summary', '') if (research_dossier or {}).get('source') == 'openai_web_search' else ''}",
         f"- Target role: {role.get('title', 'Target Role')}",
         f"- Role core work: {', '.join(role.get('core_work', [])[:10]) if isinstance(role.get('core_work'), list) else role.get('core_work', '')}",
         f"- Hiring risks to reduce: {', '.join(role.get('hiring_risks', [])[:8]) if isinstance(role.get('hiring_risks'), list) else role.get('hiring_risks', '')}",

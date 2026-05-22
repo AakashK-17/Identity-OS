@@ -341,43 +341,44 @@ function PlaygroundPanel({ item, versions, active, onVersion, onRegenerate, rege
   const directHooks = matrixEntries.filter((entry) => entry.alignment_type === "direct_match" || entry.alignment_type === "transferable_workflow").slice(0, 5);
   const bridgeHooks = matrixEntries.filter((entry) => entry.alignment_type === "bridge_project").slice(0, 5);
   const weakHooks = matrixEntries.filter((entry) => entry.alignment_type === "weak_or_unsupported").slice(0, 5);
-  const sources = item?.research_sources || research.sources || [];
+  const hasWebResearch = research.source === "openai_web_search";
+  const sources = hasWebResearch ? (item?.research_sources || research.sources || []) : [];
   const processing = processingMode !== "idle";
   return (
     <div className="playground">
       <div className="card research-card" style={{ padding: 20 }}>
-        <div className="card-label"><b>Company research</b><span>{research.source === "openai_web_search" ? "web" : "local"}</span></div>
+        <div className="card-label"><b>{hasWebResearch ? "Company research" : "JD alignment"}</b><span>{research.status || (hasWebResearch ? "Web research active" : "Using JD-only alignment")}</span></div>
         {processing && !item ? <SkeletonLines rows={5}/> : (
           <div className="research-grid">
             <div>
               <div className="collabel">Target company</div>
               <strong>{company.name || item?.company || "Unknown company"}</strong>
               <p>{company.domain || "Domain inferred from JD"}</p>
-              {company.public_summary && <span>{company.public_summary}</span>}
+              {hasWebResearch && company.public_summary && <span>{company.public_summary}</span>}
             </div>
             <div>
               <div className="collabel">Role intent</div>
               <strong>{role.title || item?.role || "Target role"}</strong>
               <p>{Array.isArray(role.core_work) ? role.core_work.slice(0, 4).join(" · ") : role.core_work || "Mapped from JD signals"}</p>
             </div>
-            <div>
-              <div className="collabel">Experience hooks</div>
+            {directHooks.length > 0 && <div>
+              <div className="collabel">Experience evidence</div>
               <div className="hook-list">{directHooks.map((entry) => <span key={`${entry.term}-${entry.candidate_hook}`}>{entry.term} · {entry.candidate_hook}</span>)}</div>
-            </div>
-            <div>
-              <div className="collabel">Bridge use cases</div>
+            </div>}
+            {bridgeHooks.length > 0 && <div>
+              <div className="collabel">Bridge candidates</div>
               <div className="hook-list">{bridgeHooks.map((entry) => <span key={`${entry.term}-${entry.recommended_section}`}>{entry.term} · {entry.recommended_section}</span>)}</div>
-            </div>
+            </div>}
+            {weakHooks.length > 0 && <div>
+              <div className="collabel">Unsupported / risky</div>
+              <div className="hook-list">{weakHooks.map((entry) => <span key={`${entry.term}-weak`}>{entry.term}</span>)}</div>
+            </div>}
             <div>
-              <div className="collabel">Weak / unsupported</div>
-              <div className="hook-list">{weakHooks.length ? weakHooks.map((entry) => <span key={`${entry.term}-weak`}>{entry.term}</span>) : <span>None flagged</span>}</div>
-            </div>
-            <div>
-              <div className="collabel">Sources used</div>
+              <div className="collabel">Sources</div>
               <div className="source-list">
                 {sources.length ? sources.slice(0, 4).map((source, index) => (
                   <a key={`${source.url || source.title}-${index}`} href={source.url || "#"} target="_blank" rel="noreferrer">{source.title || source.url}</a>
-                )) : <span>No live sources used for this run.</span>}
+                )) : <span>{hasWebResearch ? "No source links were returned." : "Live web research is off for this run."}</span>}
               </div>
             </div>
           </div>
