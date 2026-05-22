@@ -84,7 +84,10 @@ function CountUp({ value, duration = 1100, suffix = "", decimals = 0, delay = 0 
 
 const PROCESSING_MESSAGES = [
   "Parsing JD...",
+  "Researching company context...",
+  "Mapping experience hooks...",
   "Cross-referencing memory...",
+  "Building bridge use cases...",
   "Refining bullets...",
   "Exporting DOCX...",
   "Preparing preview...",

@@ -41,6 +41,7 @@ RUN_DIR = ROOT / "runs"
 DATA_DIR = ROOT / "data"
 HISTORY_FILE = DATA_DIR / "history.json"
 JD_CACHE_FILE = DATA_DIR / "jd_intelligence_cache.json"
+RESEARCH_CACHE_FILE = DATA_DIR / "company_research_cache.json"
 
 
 def load_local_env() -> None:
@@ -70,6 +71,7 @@ OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 RESULTS: dict[str, dict] = {}
 JD_INTELLIGENCE_VERSION = 6
+RESEARCH_VERSION = 1
 BUILD_COMMIT = os.environ.get("RENDER_GIT_COMMIT", "")
 BUILD_TIMESTAMP = os.environ.get("RENDER_DEPLOYED_AT", "")
 
@@ -137,6 +139,19 @@ def load_jd_cache() -> dict:
 
 def save_jd_cache(data: dict) -> None:
     JD_CACHE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def load_research_cache() -> dict:
+    if not RESEARCH_CACHE_FILE.exists():
+        return {}
+    try:
+        return json.loads(RESEARCH_CACHE_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_research_cache(data: dict) -> None:
+    RESEARCH_CACHE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def jd_cache_key(jd_text: str) -> str:
@@ -333,6 +348,11 @@ def normalize_resume_item(item: dict) -> dict:
         item.setdefault("active_version_id", active_version(item).get("id", "v1"))
     item.setdefault("user_proof", [])
     item.setdefault("playground_notes", [])
+    item.setdefault("research_dossier", {})
+    item.setdefault("company_research", item.get("research_dossier", {}).get("target_company", {}) if isinstance(item.get("research_dossier"), dict) else {})
+    item.setdefault("experience_alignment_matrix", {})
+    item.setdefault("research_sources", item.get("research_dossier", {}).get("sources", []) if isinstance(item.get("research_dossier"), dict) else [])
+    item.setdefault("research_version", item.get("research_dossier", {}).get("research_version"))
     return item
 
 
@@ -362,6 +382,11 @@ def playground_payload(item: dict) -> dict:
     payload["docx_url"] = f"/api/download/{run_id}/docx"
     payload["pdf_url"] = f"/api/download/{run_id}/pdf" if has_pdf else None
     payload["preview_url"] = f"/api/preview/{run_id}/pdf" if has_pdf else None
+    payload["research_dossier"] = item.get("research_dossier", {})
+    payload["company_research"] = item.get("company_research", {})
+    payload["experience_alignment_matrix"] = item.get("experience_alignment_matrix", {})
+    payload["research_sources"] = item.get("research_sources", [])
+    payload["research_version"] = item.get("research_version")
     return payload
 
 
@@ -371,6 +396,357 @@ def profile_to_text(profile: dict, proof: list[dict] | None = None) -> str:
         if item.get("used") is True:
             text += " " + " ".join(str(item.get(key, "")) for key in ["keyword", "where", "proof"])
     return text
+
+
+def profile_company_names(profile: dict) -> list[str]:
+    names = []
+    for item in (profile or {}).get("experiences", []) or []:
+        company = str(item.get("company", "") if isinstance(item, dict) else "").strip()
+        if company and company.lower() not in {"company", "unknown company"} and company not in names:
+            names.append(company)
+    return names[:4]
+
+
+def build_experience_graph(profile: dict) -> dict:
+    profile = profile or {}
+    experiences = []
+    for index, item in enumerate(profile.get("experiences", []) or []):
+        if not isinstance(item, dict):
+            continue
+        bullets = item.get("bullets", [])
+        if isinstance(bullets, str):
+            bullets = [bullets]
+        experiences.append({
+            "id": f"experience_{index + 1}",
+            "company": str(item.get("company", "")).strip(),
+            "role": str(item.get("role", "") or item.get("title", "")).strip(),
+            "duration": str(item.get("duration", "")).strip(),
+            "text": " ".join(str(value) for value in [
+                item.get("company", ""),
+                item.get("role", "") or item.get("title", ""),
+                item.get("description", ""),
+                " ".join(str(bullet) for bullet in bullets),
+            ] if value),
+        })
+    projects = []
+    for index, item in enumerate(profile.get("projects", []) or []):
+        if not isinstance(item, dict):
+            continue
+        projects.append({
+            "id": f"project_{index + 1}",
+            "title": str(item.get("title", "")).strip(),
+            "text": " ".join(str(value) for value in [item.get("title", ""), item.get("description", "")] if value),
+        })
+    return {
+        "experiences": experiences,
+        "projects": projects,
+        "skills": str(profile.get("skills", "") or ""),
+        "education": profile.get("education", []) or [],
+        "certifications": profile.get("certifications", []) or [],
+    }
+
+
+def research_cache_key(company: str, role: str, prior_companies: list[str], jd_intelligence: dict) -> str:
+    terms = [signal_term(item) for item in (jd_intelligence or {}).get("keyword_plan", [])[:12]]
+    raw = json.dumps({
+        "version": RESEARCH_VERSION,
+        "company": company,
+        "role": role,
+        "prior_companies": prior_companies,
+        "terms": terms,
+    }, sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def cache_is_fresh(entry: dict) -> bool:
+    try:
+        created_at = datetime.fromisoformat(entry.get("created_at", ""))
+    except ValueError:
+        return False
+    ttl_days = int(os.environ.get("RESEARCH_CACHE_TTL_DAYS", "30") or "30")
+    return (datetime.now() - created_at).days < ttl_days
+
+
+def parse_json_object(text: str) -> dict:
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return {}
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
+
+
+def response_output_text(response) -> str:
+    direct = getattr(response, "output_text", None)
+    if direct:
+        return direct
+    parts = []
+    for item in getattr(response, "output", []) or []:
+        for content in getattr(item, "content", []) or []:
+            text = getattr(content, "text", None)
+            if text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def response_sources(response) -> list[dict]:
+    sources = []
+    seen = set()
+    for item in getattr(response, "output", []) or []:
+        action = getattr(getattr(item, "action", None), "sources", None)
+        for source in action or []:
+            url = getattr(source, "url", "") or (source.get("url") if isinstance(source, dict) else "")
+            title = getattr(source, "title", "") or (source.get("title") if isinstance(source, dict) else "")
+            if url and url not in seen:
+                seen.add(url)
+                sources.append({"url": url, "title": title or url})
+        for content in getattr(item, "content", []) or []:
+            for annotation in getattr(content, "annotations", []) or []:
+                url = getattr(annotation, "url", "") or (annotation.get("url") if isinstance(annotation, dict) else "")
+                title = getattr(annotation, "title", "") or (annotation.get("title") if isinstance(annotation, dict) else "")
+                if url and url not in seen:
+                    seen.add(url)
+                    sources.append({"url": url, "title": title or url})
+    return sources[:12]
+
+
+def deterministic_research_dossier(company: str, role: str, prior_companies: list[str], jd_intelligence: dict) -> dict:
+    plan = jd_intelligence.get("keyword_plan", []) if jd_intelligence else []
+    critical = [signal_term(item) for item in plan if item.get("importance") == "critical"][:10]
+    clusters = sorted({item.get("semantic_cluster") for item in plan if item.get("semantic_cluster")})
+    return {
+        "research_version": RESEARCH_VERSION,
+        "source": "deterministic",
+        "target_company": {
+            "name": company or "Unknown Company",
+            "domain": clusters[0] if clusters else "unknown",
+            "products_services": [],
+            "operating_model": "",
+            "public_summary": "Live company research was not available; Hone used the JD keyword plan and saved profile instead.",
+        },
+        "target_role": {
+            "title": role or "Target Role",
+            "seniority": "inferred from JD",
+            "core_work": critical,
+            "success_metrics": [],
+            "hiring_risks": [],
+        },
+        "prior_companies": [{"name": name, "public_context": ""} for name in prior_companies],
+        "sources": [],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def openai_company_research(company: str, role: str, prior_companies: list[str], jd_intelligence: dict, api_key: str | None = None) -> dict | None:
+    if os.environ.get("RESEARCH_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+        return None
+    key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not key or not company or company == "Unknown Company":
+        return None
+    plan_terms = [signal_term(item) for item in (jd_intelligence or {}).get("keyword_plan", [])[:18]]
+    prompt = f"""
+Use public web search to build a concise resume-alignment research dossier.
+
+Research only public company and role context. Do not infer private facts.
+Return strict JSON only with these keys:
+target_company: {{name, domain, products_services, operating_model, public_summary}}
+target_role: {{title, seniority, core_work, success_metrics, hiring_risks}}
+prior_companies: [{{name, public_context, likely_business_functions}}]
+sources: [{{title, url}}]
+
+Target hiring company: {company}
+Target role title: {role or "Target Role"}
+Important role/JD signals: {", ".join(plan_terms)}
+Candidate prior company names to contextualize, if public information is available: {", ".join(prior_companies) or "none"}
+
+Rules:
+- Keep it compact and factual.
+- Focus on company domain, products/services, role intent, business workflows, and hiring risks.
+- Do not include benefits, salary, stock, awards, unrelated news, or marketing fluff.
+- If a prior company is ambiguous, keep public_context empty instead of guessing.
+"""
+    try:
+        client = OpenAI(api_key=key)
+        with monitor_span("research.web_search", "Research company and role with OpenAI web search", company=company, role=role):
+            response = client.responses.create(
+                model=os.environ.get("OPENAI_WEB_SEARCH_MODEL", "gpt-4o-mini"),
+                tools=[{"type": os.environ.get("OPENAI_WEB_SEARCH_TOOL", "web_search_preview")}],
+                input=prompt,
+            )
+        payload = parse_json_object(response_output_text(response))
+        if not payload:
+            return None
+        payload["sources"] = (payload.get("sources") or []) + response_sources(response)
+        payload["research_version"] = RESEARCH_VERSION
+        payload["source"] = "openai_web_search"
+        payload["created_at"] = datetime.now().isoformat(timespec="seconds")
+        return payload
+    except Exception as exc:
+        capture_monitoring_exception(exc, stage="research.web_search", company=company, role=role)
+        print(f"[research] web search unavailable, using deterministic dossier: {exc}")
+        return None
+
+
+def extract_research_dossier(jd_text: str, profile: dict, jd_intelligence: dict, api_key: str | None = None) -> dict:
+    research_enabled = os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"}
+    metadata = extract_job_metadata(jd_text, api_key=api_key, prefer_ai=research_enabled)
+    company = metadata.get("company_display", "Unknown Company")
+    role = metadata.get("role_display", "Target Role")
+    prior_companies = profile_company_names(profile)
+    key = research_cache_key(company, role, prior_companies, jd_intelligence)
+    cache = load_research_cache()
+    existing = cache.get(key)
+    if existing and existing.get("research_version") == RESEARCH_VERSION and cache_is_fresh(existing):
+        return existing
+    dossier = openai_company_research(company, role, prior_companies, jd_intelligence, api_key=api_key)
+    if not dossier:
+        dossier = deterministic_research_dossier(company, role, prior_companies, jd_intelligence)
+    dossier.setdefault("target_company", {}).setdefault("name", company)
+    dossier.setdefault("target_role", {}).setdefault("title", role)
+    dossier["metadata"] = {
+        "company": company,
+        "role": role,
+        "metadata_source": metadata.get("metadata_source"),
+        "metadata_confidence": metadata.get("metadata_confidence"),
+    }
+    cache[key] = dossier
+    save_research_cache(cache)
+    return dossier
+
+
+def meaningful_tokens(text: str) -> set[str]:
+    stop = {
+        "the", "and", "for", "with", "from", "that", "this", "into", "using", "used",
+        "data", "analysis", "analytics", "business", "role", "team", "work", "tools",
+        "model", "models", "system", "systems", "support", "create", "build", "develop",
+    }
+    return {
+        token for token in re.findall(r"[a-zA-Z][a-zA-Z0-9+#.-]{2,}", (text or "").lower())
+        if token not in stop
+    }
+
+
+def choose_alignment_hook(signal: dict, graph: dict) -> dict:
+    term = signal_term(signal)
+    category = signal.get("category", "")
+    term_lower = term.lower()
+    term_tokens = meaningful_tokens(term)
+    for experience in graph.get("experiences", []):
+        text = experience.get("text", "")
+        lower = text.lower()
+        if term_lower and term_lower in lower:
+            return {
+                "alignment_type": "direct_match",
+                "candidate_hook": f"{experience.get('role') or 'Experience'} at {experience.get('company') or 'prior role'}",
+                "recommended_section": "recent_experience",
+                "rationale": "Exact JD phrase already appears in the saved experience.",
+            }
+    for project in graph.get("projects", []):
+        text = project.get("text", "")
+        if term_lower and term_lower in text.lower():
+            return {
+                "alignment_type": "direct_match",
+                "candidate_hook": project.get("title") or "saved project",
+                "recommended_section": "projects",
+                "rationale": "Exact JD phrase already appears in the saved project.",
+            }
+    profile_skills = graph.get("skills", "")
+    if term_lower and term_lower in profile_skills.lower():
+        return {
+            "alignment_type": "skills_support",
+            "candidate_hook": "saved skills/core competencies",
+            "recommended_section": "competencies",
+            "rationale": "The saved skill list supports the phrase, but it still needs contextual use.",
+        }
+    best = None
+    best_score = 0
+    for experience in graph.get("experiences", []):
+        score = len(term_tokens & meaningful_tokens(experience.get("text", "")))
+        if score > best_score:
+            best = experience
+            best_score = score
+    if best and best_score:
+        return {
+            "alignment_type": "transferable_workflow",
+            "candidate_hook": f"{best.get('role') or 'Experience'} at {best.get('company') or 'prior role'}",
+            "recommended_section": "experience",
+            "rationale": "Saved work shares functional language with the JD and can be reframed without changing the experience.",
+        }
+    if category in {"functional_work", "methods_frameworks", "stakeholder_scope", "seniority_signals"}:
+        return {
+            "alignment_type": "bridge_project",
+            "candidate_hook": "project expansion zone",
+            "recommended_section": "projects",
+            "rationale": "No direct profile hook was found; use a project/use-case bridge instead of overstating employment history.",
+        }
+    return {
+        "alignment_type": "weak_or_unsupported",
+        "candidate_hook": "",
+        "recommended_section": "keyword_strategy",
+        "rationale": "No reliable saved evidence was found. Avoid making this a core employment claim.",
+    }
+
+
+def build_experience_alignment_matrix(profile: dict, jd_intelligence: dict, research_dossier: dict) -> dict:
+    graph = build_experience_graph(profile)
+    entries = []
+    for signal in (jd_intelligence or {}).get("keyword_plan", [])[:40]:
+        hook = choose_alignment_hook(signal, graph)
+        entries.append({
+            "term": signal.get("term"),
+            "category": signal.get("category"),
+            "importance": signal.get("importance"),
+            "semantic_cluster": signal.get("semantic_cluster"),
+            **hook,
+        })
+    counts = {}
+    for entry in entries:
+        counts[entry["alignment_type"]] = counts.get(entry["alignment_type"], 0) + 1
+    return {
+        "alignment_version": RESEARCH_VERSION,
+        "summary": counts,
+        "entries": entries,
+        "experience_graph": graph,
+        "target_company": (research_dossier or {}).get("target_company", {}),
+        "target_role": (research_dossier or {}).get("target_role", {}),
+    }
+
+
+def research_alignment_summary(research_dossier: dict, alignment_matrix: dict) -> str:
+    if not research_dossier and not alignment_matrix:
+        return ""
+    company = (research_dossier or {}).get("target_company", {})
+    role = (research_dossier or {}).get("target_role", {})
+    lines = [
+        "RESEARCH-FIRST ALIGNMENT DOSSIER:",
+        f"- Target company: {company.get('name', 'Unknown Company')}",
+        f"- Company domain: {company.get('domain', 'unknown')}",
+        f"- Public company context: {company.get('public_summary', '')}",
+        f"- Target role: {role.get('title', 'Target Role')}",
+        f"- Role core work: {', '.join(role.get('core_work', [])[:10]) if isinstance(role.get('core_work'), list) else role.get('core_work', '')}",
+        f"- Hiring risks to reduce: {', '.join(role.get('hiring_risks', [])[:8]) if isinstance(role.get('hiring_risks'), list) else role.get('hiring_risks', '')}",
+        "EXPERIENCE ALIGNMENT MATRIX:",
+    ]
+    for entry in (alignment_matrix or {}).get("entries", [])[:28]:
+        lines.append(
+            f"- {entry.get('term')} [{entry.get('importance')}, {entry.get('category')}]: "
+            f"{entry.get('alignment_type')} via {entry.get('candidate_hook') or 'no reliable hook'}; "
+            f"place in {entry.get('recommended_section')}. {entry.get('rationale')}"
+        )
+    lines.extend([
+        "Generation rules from the dossier:",
+        "- Do not generate random bullets. Every bullet must connect a JD requirement to a saved candidate hook or a clearly labeled bridge project/use case.",
+        "- Preserve the original essence of each company experience; reframe the use case, not the facts of employment.",
+        "- Place unsupported or weak terms in projects/core competencies only when the profile can plausibly support the workflow.",
+        "- Do not cite sources inside the resume; use research only to choose domain language, role intent, and business context.",
+    ])
+    return "\n".join(line for line in lines if line is not None)
 
 
 SECTION_WEIGHTS = {
@@ -1356,6 +1732,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, {
                 "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
+                "research_enabled": os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"},
+                "research_version": RESEARCH_VERSION,
                 "sentry_configured": monitoring_enabled(),
                 "sentry_frontend_dsn": os.environ.get("SENTRY_FRONTEND_DSN", ""),
                 "sentry_environment": os.environ.get("SENTRY_ENVIRONMENT", "development"),
@@ -1376,6 +1754,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, {
                 "ok": True,
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
+                "research_enabled": os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"},
+                "research_version": RESEARCH_VERSION,
                 "sentry_configured": monitoring_enabled(),
                 "build_commit": BUILD_COMMIT,
                 "build_timestamp": BUILD_TIMESTAMP,
@@ -1393,6 +1773,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "build_commit": BUILD_COMMIT,
                 "build_timestamp": BUILD_TIMESTAMP,
                 "jd_intelligence_version": JD_INTELLIGENCE_VERSION,
+                "research_version": RESEARCH_VERSION,
                 "sentry_configured": monitoring_enabled(),
                 "storage": {
                     "data_dir": str(DATA_DIR),
@@ -1507,7 +1888,11 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         skip_pdf = form.getfirst("skip_pdf") == "true"
         with monitor_span("generate.jd_intelligence", "Extract JD intelligence", run_id=run_id):
             jd_intelligence = extract_jd_intelligence(jd_text, api_key=api_key)
+        with monitor_span("generate.research_alignment", "Build research dossier and experience alignment", run_id=run_id):
+            research_dossier = extract_research_dossier(jd_text, profile_data, jd_intelligence, api_key=api_key)
+            alignment_matrix = build_experience_alignment_matrix(profile_data, jd_intelligence, research_dossier)
         generation_jd = jd_text + "\n\n" + intelligence_summary(jd_intelligence)
+        generation_jd += "\n\n" + research_alignment_summary(research_dossier, alignment_matrix)
         with monitor_span("generate.resume", "Generate resume document", run_id=run_id, skip_pdf=skip_pdf):
             result = generate_resume_from_jd(
                 generation_jd,
@@ -1540,6 +1925,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "jd_intelligence": jd_intelligence,
             "analysis": analysis,
             "keyword_gaps": keyword_gaps,
+            "research_dossier": research_dossier,
+            "experience_alignment_matrix": alignment_matrix,
         }
 
         RESULTS[run_id] = result
@@ -1558,6 +1945,11 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "profile": profile_for_analysis,
             "jd_intelligence": jd_intelligence,
             "metadata": result.get("metadata", {}),
+            "research_dossier": research_dossier,
+            "company_research": research_dossier.get("target_company", {}),
+            "experience_alignment_matrix": alignment_matrix,
+            "research_sources": research_dossier.get("sources", []),
+            "research_version": research_dossier.get("research_version"),
             "api_key_available": bool(api_key or os.environ.get("OPENAI_API_KEY")),
             "skip_pdf": skip_pdf,
             "versions": [version],
@@ -1580,6 +1972,10 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "structured_resume": result["structured_resume"],
             "analysis": analysis,
             "keyword_gaps": keyword_gaps,
+            "research_dossier": research_dossier,
+            "company_research": research_dossier.get("target_company", {}),
+            "experience_alignment_matrix": alignment_matrix,
+            "research_sources": research_dossier.get("sources", []),
             "metadata": result.get("metadata", {}),
         }
         return response
@@ -1599,6 +1995,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         jd_intelligence = item.get("jd_intelligence") or {}
         if jd_intelligence.get("parser_version") != JD_INTELLIGENCE_VERSION:
             item = update_history_item(run_id, lambda current: self.rescore_resume_item(current)) or item
+        if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
+            item = update_history_item(run_id, self.ensure_research_for_item) or item
         json_response(self, HTTPStatus.OK, playground_payload(item))
 
     def handle_resume_action(self, path: str) -> None:
@@ -1682,6 +2080,18 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         version["analysis"] = analysis
         return item
 
+    def ensure_research_for_item(self, item: dict) -> dict:
+        item = normalize_resume_item(item)
+        jd_intelligence = ensure_item_intelligence(item)
+        if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
+            item["research_dossier"] = extract_research_dossier(item.get("jd", ""), item.get("profile", {}), jd_intelligence, api_key=os.environ.get("OPENAI_API_KEY"))
+            item["company_research"] = item["research_dossier"].get("target_company", {})
+            item["research_sources"] = item["research_dossier"].get("sources", [])
+            item["research_version"] = item["research_dossier"].get("research_version")
+        if not item.get("experience_alignment_matrix") or item.get("experience_alignment_matrix", {}).get("alignment_version") != RESEARCH_VERSION:
+            item["experience_alignment_matrix"] = build_experience_alignment_matrix(item.get("profile", {}), jd_intelligence, item.get("research_dossier", {}))
+        return item
+
     def regenerate_resume_item(self, run_id: str, body: dict) -> dict | None:
         set_monitoring_context(run_id=run_id)
         item = find_history_item(run_id)
@@ -1694,6 +2104,14 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             raise RegenerationError("Regeneration needs an OpenAI key. Configure OPENAI_API_KEY on the server or add it in the OpenAI API Key field.")
         with monitor_span("regenerate.jd_intelligence", "Ensure JD intelligence", run_id=run_id):
             jd_intelligence = ensure_item_intelligence(item, api_key=active_api_key)
+        with monitor_span("regenerate.research_alignment", "Ensure research dossier and experience alignment", run_id=run_id):
+            if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
+                item["research_dossier"] = extract_research_dossier(item.get("jd", ""), item.get("profile", {}), jd_intelligence, api_key=active_api_key)
+                item["company_research"] = item["research_dossier"].get("target_company", {})
+                item["research_sources"] = item["research_dossier"].get("sources", [])
+                item["research_version"] = item["research_dossier"].get("research_version")
+            if not item.get("experience_alignment_matrix") or item.get("experience_alignment_matrix", {}).get("alignment_version") != RESEARCH_VERSION:
+                item["experience_alignment_matrix"] = build_experience_alignment_matrix(item.get("profile", {}), jd_intelligence, item.get("research_dossier", {}))
         proof = body.get("proof")
         if isinstance(proof, list):
             item["user_proof"] = proof
@@ -1713,6 +2131,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 jd_intelligence=jd_intelligence,
             )
         augmented_jd += "\n\n" + intelligence_summary(jd_intelligence, current_gaps)
+        augmented_jd += "\n\n" + research_alignment_summary(item.get("research_dossier", {}), item.get("experience_alignment_matrix", {}))
         augmented_jd += "\n\nPREVIOUS STRUCTURED RESUME VERSION:\n" + json.dumps(previous.get("structured_resume", {}), indent=2)
         if instruction:
             augmented_jd += "\n\nPLAYGROUND REGENERATION REQUEST:\n" + instruction
@@ -1761,6 +2180,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             "jd_intelligence": jd_intelligence,
             "analysis": analysis,
             "keyword_gaps": gaps,
+            "research_dossier": item.get("research_dossier", {}),
+            "experience_alignment_matrix": item.get("experience_alignment_matrix", {}),
         }
 
         def apply_update(current: dict) -> dict:
@@ -1774,6 +2195,11 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             current["analysis"] = analysis
             current["keyword_gaps"] = gaps
             current["user_proof"] = item.get("user_proof", [])
+            current["research_dossier"] = item.get("research_dossier", {})
+            current["company_research"] = item.get("company_research", {})
+            current["experience_alignment_matrix"] = item.get("experience_alignment_matrix", {})
+            current["research_sources"] = item.get("research_sources", [])
+            current["research_version"] = item.get("research_version")
             current.setdefault("playground_notes", []).append({
                 "created_at": version["created_at"],
                 "message": instruction or "Regenerated against the keyword strategy plan.",

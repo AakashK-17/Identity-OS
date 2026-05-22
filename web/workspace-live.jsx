@@ -333,9 +333,56 @@ function PlaygroundPanel({ item, versions, active, onVersion, onRegenerate, rege
   const placed = (gaps.covered || []).map(liveSignalTerm);
   const bridge = (gaps.bridge_keywords || []).map(liveSignalTerm);
   const weak = (gaps.weak_terms || []).map(liveSignalTerm);
+  const research = item?.research_dossier || {};
+  const company = research.target_company || item?.company_research || {};
+  const role = research.target_role || {};
+  const matrix = item?.experience_alignment_matrix || {};
+  const matrixEntries = matrix.entries || [];
+  const directHooks = matrixEntries.filter((entry) => entry.alignment_type === "direct_match" || entry.alignment_type === "transferable_workflow").slice(0, 5);
+  const bridgeHooks = matrixEntries.filter((entry) => entry.alignment_type === "bridge_project").slice(0, 5);
+  const weakHooks = matrixEntries.filter((entry) => entry.alignment_type === "weak_or_unsupported").slice(0, 5);
+  const sources = item?.research_sources || research.sources || [];
   const processing = processingMode !== "idle";
   return (
     <div className="playground">
+      <div className="card research-card" style={{ padding: 20 }}>
+        <div className="card-label"><b>Company research</b><span>{research.source === "openai_web_search" ? "web" : "local"}</span></div>
+        {processing && !item ? <SkeletonLines rows={5}/> : (
+          <div className="research-grid">
+            <div>
+              <div className="collabel">Target company</div>
+              <strong>{company.name || item?.company || "Unknown company"}</strong>
+              <p>{company.domain || "Domain inferred from JD"}</p>
+              {company.public_summary && <span>{company.public_summary}</span>}
+            </div>
+            <div>
+              <div className="collabel">Role intent</div>
+              <strong>{role.title || item?.role || "Target role"}</strong>
+              <p>{Array.isArray(role.core_work) ? role.core_work.slice(0, 4).join(" · ") : role.core_work || "Mapped from JD signals"}</p>
+            </div>
+            <div>
+              <div className="collabel">Experience hooks</div>
+              <div className="hook-list">{directHooks.map((entry) => <span key={`${entry.term}-${entry.candidate_hook}`}>{entry.term} · {entry.candidate_hook}</span>)}</div>
+            </div>
+            <div>
+              <div className="collabel">Bridge use cases</div>
+              <div className="hook-list">{bridgeHooks.map((entry) => <span key={`${entry.term}-${entry.recommended_section}`}>{entry.term} · {entry.recommended_section}</span>)}</div>
+            </div>
+            <div>
+              <div className="collabel">Weak / unsupported</div>
+              <div className="hook-list">{weakHooks.length ? weakHooks.map((entry) => <span key={`${entry.term}-weak`}>{entry.term}</span>) : <span>None flagged</span>}</div>
+            </div>
+            <div>
+              <div className="collabel">Sources used</div>
+              <div className="source-list">
+                {sources.length ? sources.slice(0, 4).map((source, index) => (
+                  <a key={`${source.url || source.title}-${index}`} href={source.url || "#"} target="_blank" rel="noreferrer">{source.title || source.url}</a>
+                )) : <span>No live sources used for this run.</span>}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       <div className="card" style={{ padding: 20 }}>
         <div className="card-label"><b>Keyword strategy</b><span>{item ? "live" : "idle"}</span></div>
         {processing && !item ? <SkeletonLines rows={5}/> : <div className="kw-strategy">

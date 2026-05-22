@@ -1451,6 +1451,12 @@ PHASE 2 - Contextual Alignment Engine:
 - If experience does not naturally carry a missing workflow, create or retitle a bridge project to absorb the term with relevant tools, workflows, and business outcomes.
 - Projects may modernize the profile with exploratory, self-driven, or experimental capabilities that support the target role.
 - Avoid naked keyword lists; every important phrase should live inside useful context.
+- If the prompt contains RESEARCH-FIRST ALIGNMENT DOSSIER, use it before writing bullets:
+  - understand the target company, domain, role intent, hiring risks, and success metrics.
+  - use the Experience Alignment Matrix to connect every important JD phrase to a saved experience hook, bridge project, skill, or weak/unsupported flag.
+  - preserve the main essence of the candidate's prior companies and responsibilities.
+  - do not randomly generate bullets, tools, or responsibilities that lack a saved hook or bridge-project rationale.
+  - do not cite web sources in the resume; use research only to choose accurate domain language and business context.
 
 PHASE 3 - Identity Optimization:
 Choose ONE dominant identity that matches the JD's highest-value requirement:

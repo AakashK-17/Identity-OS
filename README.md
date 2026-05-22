@@ -96,6 +96,10 @@ GOOGLE_CLIENT_ID=your_google_oauth_web_client_id_here
 HOST=127.0.0.1
 PORT=8787
 OUTPUT_ROOT=./data/generated
+RESEARCH_ENABLED=false
+OPENAI_WEB_SEARCH_MODEL=gpt-4o-mini
+OPENAI_WEB_SEARCH_TOOL=web_search_preview
+RESEARCH_CACHE_TTL_DAYS=30
 SENTRY_DSN=your_sentry_backend_dsn_here
 SENTRY_FRONTEND_DSN=your_sentry_browser_dsn_here
 SENTRY_ENVIRONMENT=development
@@ -113,6 +117,12 @@ Hone supports Sentry for production monitoring. When `SENTRY_DSN` is configured,
 When `SENTRY_FRONTEND_DSN` is configured, the browser captures frontend errors and failed API calls without sending resume text, JD text, profile bodies, cookies, or API keys.
 
 Use `/api/health` to confirm runtime health, OpenAI configuration, Sentry configuration, build commit, and storage mount status.
+
+## Research-First Alignment
+
+Hone can optionally research the target company and role before generation using OpenAI Web Search through the Responses API. Enable it with `RESEARCH_ENABLED=true`. The research layer stores a compact company/role dossier, public sources, and an experience alignment matrix with each resume run. If web search is unavailable, Hone falls back to local JD intelligence and saved profile mapping so generation still works.
+
+The research layer only sends public search context such as hiring company, role title, important JD signals, and prior company names. It does not send full resume text or personal contact details to web search queries.
 
 ## Local Setup
 
@@ -178,6 +188,10 @@ GOOGLE_CLIENT_ID=your Google OAuth Web Client ID
 HOST=0.0.0.0
 PORT=8787
 OUTPUT_ROOT=/app/data/generated
+RESEARCH_ENABLED=true
+OPENAI_WEB_SEARCH_MODEL=gpt-4o-mini
+OPENAI_WEB_SEARCH_TOOL=web_search_preview
+RESEARCH_CACHE_TTL_DAYS=30
 SENTRY_DSN=your Sentry backend DSN
 SENTRY_FRONTEND_DSN=your Sentry browser DSN
 SENTRY_ENVIRONMENT=production

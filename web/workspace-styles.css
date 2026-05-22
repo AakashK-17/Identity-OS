@@ -737,6 +737,63 @@ a { color: inherit; text-decoration: none; }
 
 /* ──────────── Right column: playground ──────────── */
 .playground { display: flex; flex-direction: column; gap: 14px; }
+.research-card {
+  overflow: hidden;
+}
+.research-grid {
+  display: grid;
+  gap: 14px;
+}
+.research-grid > div {
+  min-width: 0;
+}
+.research-grid strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  margin-top: 4px;
+}
+.research-grid p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.research-grid span,
+.source-list a {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.hook-list,
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 6px;
+}
+.hook-list span,
+.source-list a {
+  display: block;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: rgba(246,243,238,0.62);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.source-list a {
+  color: var(--ink);
+  text-decoration: none;
+  transition: transform 160ms var(--ease-out), background 160ms var(--ease-out), border-color 160ms var(--ease-out);
+}
+.source-list a:hover {
+  background: var(--paper);
+  border-color: var(--rule-2);
+  transform: translateY(-1px);
+}
 .kw-strategy {
   display: grid; gap: 10px;
 }
