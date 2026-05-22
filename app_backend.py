@@ -501,6 +501,20 @@ def cache_is_fresh(entry: dict) -> bool:
     return (datetime.now() - created_at).days < ttl_days
 
 
+def research_enabled() -> bool:
+    return os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"}
+
+
+def should_refresh_research(dossier: dict | None, version: int | None = None) -> bool:
+    if not dossier:
+        return True
+    if version != RESEARCH_VERSION and dossier.get("research_version") != RESEARCH_VERSION:
+        return True
+    if research_enabled() and dossier.get("source") != "openai_web_search":
+        return True
+    return False
+
+
 def parse_json_object(text: str) -> dict:
     if not text:
         return {}
@@ -557,7 +571,7 @@ def deterministic_research_dossier(company: str, role: str, prior_companies: lis
     return {
         "research_version": RESEARCH_VERSION,
         "source": "jd_interpretation",
-        "status": "Research unavailable; generation continued" if os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"} else "Using JD-only alignment",
+        "status": "Research unavailable; generation continued" if research_enabled() else "Using JD-only alignment",
         "target_company": {
             "name": company or "Unknown Company",
             "domain": clusters[0] if clusters else "unknown",
@@ -579,7 +593,7 @@ def deterministic_research_dossier(company: str, role: str, prior_companies: lis
 
 
 def openai_company_research(company: str, role: str, prior_companies: list[str], jd_intelligence: dict, api_key: str | None = None) -> dict | None:
-    if os.environ.get("RESEARCH_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+    if not research_enabled():
         return None
     key = api_key or os.environ.get("OPENAI_API_KEY")
     if not key or not company or company == "Unknown Company":
@@ -630,7 +644,6 @@ Rules:
 
 
 def extract_research_dossier(jd_text: str, profile: dict, jd_intelligence: dict, api_key: str | None = None) -> dict:
-    research_enabled = os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"}
     metadata = extract_job_metadata(jd_text, api_key=api_key, prefer_ai=bool(api_key or os.environ.get("OPENAI_API_KEY")))
     company = metadata.get("company_display", "Unknown Company")
     role = metadata.get("role_display", "Target Role")
@@ -642,7 +655,12 @@ def extract_research_dossier(jd_text: str, profile: dict, jd_intelligence: dict,
     key = research_cache_key(company, role, prior_companies, jd_intelligence)
     cache = load_research_cache()
     existing = cache.get(key)
-    if existing and existing.get("research_version") == RESEARCH_VERSION and cache_is_fresh(existing):
+    if (
+        existing
+        and existing.get("research_version") == RESEARCH_VERSION
+        and cache_is_fresh(existing)
+        and not (research_enabled() and existing.get("source") != "openai_web_search")
+    ):
         return existing
     dossier = openai_company_research(company, role, prior_companies, jd_intelligence, api_key=api_key)
     if not dossier:
@@ -1830,7 +1848,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, {
                 "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
-                "research_enabled": os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"},
+                "research_enabled": research_enabled(),
                 "research_version": RESEARCH_VERSION,
                 "sentry_configured": monitoring_enabled(),
                 "sentry_frontend_dsn": os.environ.get("SENTRY_FRONTEND_DSN", ""),
@@ -1852,7 +1870,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, {
                 "ok": True,
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
-                "research_enabled": os.environ.get("RESEARCH_ENABLED", "false").lower() in {"1", "true", "yes"},
+                "research_enabled": research_enabled(),
                 "research_version": RESEARCH_VERSION,
                 "sentry_configured": monitoring_enabled(),
                 "build_commit": BUILD_COMMIT,
@@ -2097,6 +2115,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         if (
             not item.get("research_dossier")
             or item.get("research_version") != RESEARCH_VERSION
+            or should_refresh_research(item.get("research_dossier"), item.get("research_version"))
             or item_needs_keyword_repair(item, ensure_item_intelligence(item))
         ):
             item = update_history_item(run_id, self.repair_playground_item) or item
@@ -2188,7 +2207,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
     def repair_playground_item(self, item: dict) -> dict:
         item = self.rescore_resume_item(item) if item_needs_keyword_repair(item, ensure_item_intelligence(item)) else normalize_resume_item(item)
         jd_intelligence = ensure_item_intelligence(item)
-        if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
+        if should_refresh_research(item.get("research_dossier"), item.get("research_version")):
             item["research_dossier"] = extract_research_dossier(item.get("jd", ""), item.get("profile", {}), jd_intelligence, api_key=os.environ.get("OPENAI_API_KEY"))
             item["company_research"] = item["research_dossier"].get("target_company", {})
             item["research_sources"] = item["research_dossier"].get("sources", [])
@@ -2200,7 +2219,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
     def ensure_research_for_item(self, item: dict) -> dict:
         item = normalize_resume_item(item)
         jd_intelligence = ensure_item_intelligence(item)
-        if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
+        if should_refresh_research(item.get("research_dossier"), item.get("research_version")):
             item["research_dossier"] = extract_research_dossier(item.get("jd", ""), item.get("profile", {}), jd_intelligence, api_key=os.environ.get("OPENAI_API_KEY"))
             item["company_research"] = item["research_dossier"].get("target_company", {})
             item["research_sources"] = item["research_dossier"].get("sources", [])
@@ -2222,7 +2241,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         with monitor_span("regenerate.jd_intelligence", "Ensure JD intelligence", run_id=run_id):
             jd_intelligence = ensure_item_intelligence(item, api_key=active_api_key)
         with monitor_span("regenerate.research_alignment", "Ensure research dossier and experience alignment", run_id=run_id):
-            if not item.get("research_dossier") or item.get("research_version") != RESEARCH_VERSION:
+            if should_refresh_research(item.get("research_dossier"), item.get("research_version")):
                 item["research_dossier"] = extract_research_dossier(item.get("jd", ""), item.get("profile", {}), jd_intelligence, api_key=active_api_key)
                 item["company_research"] = item["research_dossier"].get("target_company", {})
                 item["research_sources"] = item["research_dossier"].get("sources", [])
