@@ -10,6 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+import urllib.request
 import cgi
 
 from openai import OpenAI
@@ -42,6 +43,7 @@ DATA_DIR = ROOT / "data"
 HISTORY_FILE = DATA_DIR / "history.json"
 JD_CACHE_FILE = DATA_DIR / "jd_intelligence_cache.json"
 RESEARCH_CACHE_FILE = DATA_DIR / "company_research_cache.json"
+CAMPAIGNS_FILE = DATA_DIR / "campaigns.json"
 
 
 def load_local_env() -> None:
@@ -154,6 +156,27 @@ def save_research_cache(data: dict) -> None:
     RESEARCH_CACHE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def load_campaigns() -> dict:
+    if not CAMPAIGNS_FILE.exists():
+        return {"users": {}}
+    try:
+        return json.loads(CAMPAIGNS_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"users": {}}
+
+
+def save_campaigns(data: dict) -> None:
+    CAMPAIGNS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def campaign_agent_enabled() -> bool:
+    return os.environ.get("CAMPAIGN_AGENT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+
+
+def discovery_enabled() -> bool:
+    return os.environ.get("DISCOVERY_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+
+
 def jd_cache_key(jd_text: str) -> str:
     return hashlib.sha256((jd_text or "").encode("utf-8")).hexdigest()
 
@@ -218,6 +241,400 @@ def add_history_item(email: str, item: dict) -> None:
     record = data.setdefault("users", {}).setdefault(key, {"profile": {"email": key}, "items": []})
     record.setdefault("items", []).insert(0, item)
     save_history(data)
+
+
+CAMPAIGN_STAGES = [
+    "discovered",
+    "scored",
+    "researched",
+    "resume_ready",
+    "review",
+    "approved",
+    "submitted",
+    "responded",
+    "interviewed",
+    "outcome",
+]
+
+
+def campaign_record(email: str, data: dict | None = None) -> dict:
+    source = data if data is not None else load_campaigns()
+    return source.setdefault("users", {}).setdefault(user_key(email), {"campaigns": []})
+
+
+def campaign_snapshot(campaign: dict) -> dict:
+    leads = campaign.get("leads", []) if isinstance(campaign.get("leads"), list) else []
+    active = [lead for lead in leads if lead.get("stage") not in {"rejected", "outcome"}]
+    return {
+        **campaign,
+        "lead_count": len(leads),
+        "active_lead_count": len(active),
+        "avg_fit_score": round(sum(int(lead.get("fit_score") or 0) for lead in leads) / max(len(leads), 1)),
+    }
+
+
+def get_campaigns(email: str) -> list[dict]:
+    data = load_campaigns()
+    return [campaign_snapshot(item) for item in campaign_record(email, data).get("campaigns", [])]
+
+
+def normalize_campaign_payload(payload: dict) -> dict:
+    fields = {
+        "target_role": "",
+        "industries": "",
+        "company_stage": "",
+        "location": "",
+        "timeline": "",
+        "constraints": "",
+        "excluded_companies": "",
+        "source_boards": "",
+    }
+    for key in fields:
+        fields[key] = str(payload.get(key, "") or "").strip()
+    return fields
+
+
+def create_campaign(email: str, payload: dict) -> dict:
+    data = load_campaigns()
+    record = campaign_record(email, data)
+    now = datetime.now().isoformat(timespec="seconds")
+    campaign = {
+        "id": uuid.uuid4().hex[:12],
+        "created_at": now,
+        "updated_at": now,
+        "status": "active",
+        "premium_gate": "enabled" if campaign_agent_enabled() else "preview",
+        "goal": normalize_campaign_payload(payload),
+        "leads": [],
+        "events": [{
+            "id": uuid.uuid4().hex[:10],
+            "created_at": now,
+            "type": "campaign_created",
+            "message": "Campaign Agent workspace created.",
+        }],
+    }
+    record.setdefault("campaigns", []).insert(0, campaign)
+    save_campaigns(data)
+    return campaign_snapshot(campaign)
+
+
+def find_campaign_mut(data: dict, campaign_id: str, email: str | None = None) -> tuple[str, dict] | tuple[None, None]:
+    users = data.setdefault("users", {})
+    candidates = [user_key(email)] if email else list(users.keys())
+    for key in candidates:
+        record = users.get(key, {})
+        for campaign in record.get("campaigns", []):
+            if campaign.get("id") == campaign_id:
+                return key, campaign
+    return None, None
+
+
+def find_lead_mut(data: dict, lead_id: str, email: str | None = None) -> tuple[str, dict, dict] | tuple[None, None, None]:
+    users = data.setdefault("users", {})
+    candidates = [user_key(email)] if email else list(users.keys())
+    for key in candidates:
+        for campaign in users.get(key, {}).get("campaigns", []):
+            for lead in campaign.get("leads", []):
+                if lead.get("id") == lead_id:
+                    return key, campaign, lead
+    return None, None, None
+
+
+def campaign_event(campaign: dict, event_type: str, message: str) -> None:
+    campaign.setdefault("events", []).insert(0, {
+        "id": uuid.uuid4().hex[:10],
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "type": event_type,
+        "message": message,
+    })
+    campaign["updated_at"] = datetime.now().isoformat(timespec="seconds")
+
+
+def add_campaign_lead(email: str, campaign_id: str, payload: dict) -> dict:
+    data = load_campaigns()
+    _, campaign = find_campaign_mut(data, campaign_id, email)
+    if not campaign:
+        raise AppError("Campaign not found.")
+    jd_text = str(payload.get("jd", "") or "").strip()
+    if not jd_text:
+        raise AppError("Paste a job description before adding a lead.")
+    metadata = extract_job_metadata(jd_text, api_key=payload.get("api_key"), prefer_ai=bool(payload.get("api_key") or os.environ.get("OPENAI_API_KEY")))
+    company = metadata.get("company_display", "Unknown Company")
+    role = metadata.get("role_display", "Target Role")
+    if metadata_value_is_bad(company, "company"):
+        company = "Unknown Company"
+    if metadata_value_is_bad(role, "role"):
+        role = "Target Role"
+    now = datetime.now().isoformat(timespec="seconds")
+    lead = {
+        "id": uuid.uuid4().hex[:12],
+        "campaign_id": campaign_id,
+        "source": payload.get("source") or "manual",
+        "source_url": str(payload.get("source_url", "") or "").strip(),
+        "company": company,
+        "role": role,
+        "location": str(payload.get("location", "") or "").strip(),
+        "jd": jd_text,
+        "stage": "discovered",
+        "approval_status": "pending",
+        "fit_score": 0,
+        "created_at": now,
+        "updated_at": now,
+        "metadata": metadata,
+    }
+    campaign.setdefault("leads", []).insert(0, lead)
+    campaign_event(campaign, "lead_added", f"Added {company} - {role} to the campaign queue.")
+    save_campaigns(data)
+    return lead
+
+
+def parse_source_boards(text: str) -> list[tuple[str, str]]:
+    sources = []
+    for raw in re.split(r"[\n,]+", text or ""):
+        item = raw.strip()
+        if not item:
+            continue
+        if ":" in item:
+            source, slug = item.split(":", 1)
+            source = source.strip().lower()
+            slug = slug.strip()
+        else:
+            source, slug = "greenhouse", item
+        if source in {"greenhouse", "lever", "ashby"} and slug:
+            sources.append((source, slug))
+    return sources[:24]
+
+
+def fetch_json_url(url: str) -> dict | list | None:
+    request = urllib.request.Request(url, headers={"User-Agent": "HoneCampaignAgent/1.0"})
+    with urllib.request.urlopen(request, timeout=12) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def normalize_discovered_job(source: str, board: str, raw: dict) -> dict | None:
+    if source == "greenhouse":
+        title = raw.get("title") or "Target Role"
+        company = board
+        url = raw.get("absolute_url") or raw.get("url") or ""
+        location = ", ".join(loc.get("name", "") for loc in raw.get("offices", []) if isinstance(loc, dict)) or (raw.get("location") or {}).get("name", "")
+        content = raw.get("content") or raw.get("description") or ""
+    elif source == "lever":
+        title = raw.get("text") or "Target Role"
+        company = board
+        url = raw.get("hostedUrl") or raw.get("applyUrl") or ""
+        categories = raw.get("categories") or {}
+        location = categories.get("location", "") if isinstance(categories, dict) else ""
+        content = raw.get("descriptionPlain") or raw.get("description") or ""
+    elif source == "ashby":
+        title = raw.get("title") or raw.get("jobTitle") or "Target Role"
+        company = raw.get("companyName") or board
+        url = raw.get("jobUrl") or raw.get("externalLink") or raw.get("url") or ""
+        location = raw.get("locationName") or raw.get("location") or ""
+        content = raw.get("descriptionPlain") or raw.get("description") or raw.get("overview") or ""
+    else:
+        return None
+    jd = re.sub(r"<[^>]+>", " ", str(content or ""))
+    jd = re.sub(r"\s+", " ", jd).strip()
+    if len(jd) < 80:
+        jd = f"{title}\n{company}\n{jd}".strip()
+    return {
+        "source": source,
+        "source_url": url,
+        "company": company,
+        "role": title,
+        "location": location,
+        "jd": jd,
+    }
+
+
+def discover_jobs_from_board(source: str, board: str) -> list[dict]:
+    if source == "greenhouse":
+        payload = fetch_json_url(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true")
+        jobs = payload.get("jobs", []) if isinstance(payload, dict) else []
+    elif source == "lever":
+        payload = fetch_json_url(f"https://api.lever.co/v0/postings/{board}?mode=json")
+        jobs = payload if isinstance(payload, list) else []
+    elif source == "ashby":
+        payload = fetch_json_url(f"https://jobs.ashbyhq.com/api/non-matching-positions/{board}")
+        jobs = payload.get("jobs", payload.get("positions", [])) if isinstance(payload, dict) else payload if isinstance(payload, list) else []
+    else:
+        jobs = []
+    return [job for job in (normalize_discovered_job(source, board, raw) for raw in jobs[:40] if isinstance(raw, dict)) if job]
+
+
+def discover_campaign_leads(campaign: dict) -> tuple[list[dict], list[str]]:
+    boards = parse_source_boards((campaign.get("goal") or {}).get("source_boards", ""))
+    discovered = []
+    errors = []
+    existing_urls = {lead.get("source_url") for lead in campaign.get("leads", []) if lead.get("source_url")}
+    for source, board in boards:
+        try:
+            for job in discover_jobs_from_board(source, board):
+                if job.get("source_url") and job.get("source_url") in existing_urls:
+                    continue
+                if not job.get("jd"):
+                    continue
+                lead = {
+                    "id": uuid.uuid4().hex[:12],
+                    "campaign_id": campaign.get("id"),
+                    "stage": "discovered",
+                    "approval_status": "pending",
+                    "fit_score": 0,
+                    "created_at": datetime.now().isoformat(timespec="seconds"),
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    **job,
+                }
+                campaign.setdefault("leads", []).append(lead)
+                discovered.append(lead)
+                if lead.get("source_url"):
+                    existing_urls.add(lead.get("source_url"))
+        except Exception as exc:
+            errors.append(f"{source}:{board} unavailable ({exc.__class__.__name__})")
+    return discovered, errors
+
+
+def score_campaign_lead(lead: dict, profile: dict, api_key: str | None = None) -> dict:
+    jd_text = lead.get("jd", "")
+    intelligence = extract_jd_intelligence(jd_text, api_key=api_key)
+    plan = intelligence.get("keyword_plan", []) or intelligence.get("important_terms", [])
+    profile_text = profile_to_text(profile).lower()
+    campaign_terms = [signal_term(item) for item in plan if signal_term(item)]
+    if not campaign_terms:
+        campaign_terms = fallback_campaign_terms(jd_text)
+    matched = [term for term in campaign_terms if term.lower() in profile_text]
+    critical = [signal_term(item) for item in plan if item.get("importance") == "critical" and signal_term(item)]
+    critical_matched = [term for term in critical if term.lower() in profile_text]
+    if campaign_terms:
+        coverage = len(matched) / max(len(campaign_terms), 1)
+        critical_coverage = len(critical_matched) / max(len(critical), 1) if critical else coverage
+        score = round(min(98, max(20, 35 + coverage * 35 + critical_coverage * 25)))
+    else:
+        score = 35
+    lead["fit_score"] = score
+    lead["stage"] = "scored"
+    lead["jd_intelligence"] = intelligence
+    lead["fit_summary"] = {
+        "matched_terms": matched[:18],
+        "weak_terms": [term for term in campaign_terms if term not in matched][:18],
+        "reason": "Fit score compares the JD keyword plan against the saved Hone profile before spending time on a tailored resume.",
+    }
+    lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    return lead
+
+
+def research_campaign_lead(lead: dict, profile: dict, api_key: str | None = None) -> dict:
+    intelligence = lead.get("jd_intelligence") or extract_jd_intelligence(lead.get("jd", ""), api_key=api_key)
+    dossier = extract_research_dossier(lead.get("jd", ""), profile, intelligence, api_key=api_key)
+    alignment = build_experience_alignment_matrix(profile, intelligence, dossier)
+    lead["jd_intelligence"] = intelligence
+    lead["research_dossier"] = dossier
+    lead["experience_alignment_matrix"] = alignment
+    lead["stage"] = "researched"
+    lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    return lead
+
+
+def fallback_campaign_terms(jd_text: str) -> list[str]:
+    lower = (jd_text or "").lower()
+    catalog = [
+        "Python", "SQL", "machine learning", "forecasting", "experimentation",
+        "dashboards", "stakeholder reporting", "Power BI", "Tableau", "Excel",
+        "data visualization", "statistical modeling", "A/B testing", "segmentation",
+        "ETL", "data pipelines", "AWS", "Azure", "GCP", "Snowflake", "Databricks",
+        "PyTorch", "TensorFlow", "LLM", "generative models", "product analytics",
+        "market research", "competitive intelligence", "business analytics",
+        "healthcare analytics", "financial analysis", "project management",
+        "cross-functional collaboration", "leadership", "model monitoring",
+    ]
+    found = [term for term in catalog if term.lower() in lower]
+    phrases = re.findall(r"\b(?:build|develop|own|lead|design|manage|analy[sz]e|prepare|deliver)\s+[a-z0-9 +/#.-]{4,42}", lower)
+    for phrase in phrases[:12]:
+        cleaned = re.sub(r"\s+", " ", phrase).strip()
+        if cleaned and cleaned not in [item.lower() for item in found]:
+            found.append(cleaned)
+    return found[:28]
+
+
+def generate_resume_for_campaign_lead(email: str, campaign: dict, lead: dict, profile: dict, api_key: str | None = None) -> dict:
+    if not profile_has_content(profile):
+        raise AppError("Save a usable base profile before preparing a campaign resume.")
+    jd_text = lead.get("jd", "").strip()
+    if not jd_text:
+        raise AppError("This lead is missing its job description.")
+    run_id = uuid.uuid4().hex
+    run_dir = RUN_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    set_monitoring_context(run_id=run_id)
+
+    details = profile.get("details", {}) if isinstance(profile.get("details"), dict) else {}
+    base_resume_path = create_template_from_profile(profile, run_dir / "profile_template.docx")
+    jd_intelligence = lead.get("jd_intelligence") or extract_jd_intelligence(jd_text, api_key=api_key)
+    research_dossier = lead.get("research_dossier") or extract_research_dossier(jd_text, profile, jd_intelligence, api_key=api_key)
+    alignment_matrix = lead.get("experience_alignment_matrix") or build_experience_alignment_matrix(profile, jd_intelligence, research_dossier)
+    generation_jd = jd_text + "\n\n" + intelligence_summary(jd_intelligence)
+    generation_jd += "\n\n" + research_alignment_summary(research_dossier, alignment_matrix)
+    result = generate_resume_from_jd(
+        generation_jd,
+        base_resume_path=base_resume_path,
+        output_root=OUTPUT_ROOT,
+        details=details,
+        skip_pdf=False,
+        api_key=api_key,
+        metadata_jd_text=jd_text,
+    )
+    result = copy_version_files(result, run_dir, "v1")
+    keyword_gaps = build_keyword_gaps(jd_text, result["structured_resume"], profile, jd_intelligence=jd_intelligence)
+    analysis = score_resume(jd_text, result["structured_resume"], profile, result["pdf_path"], jd_intelligence=jd_intelligence)
+    version = {
+        "id": "v1",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "label": "Campaign Agent generation",
+        "instruction": f"Prepared for campaign {campaign.get('id')}",
+        "docx_path": result["docx_path"],
+        "pdf_path": result["pdf_path"],
+        "structured_resume": result["structured_resume"],
+        "jd_intelligence": jd_intelligence,
+        "analysis": analysis,
+        "keyword_gaps": keyword_gaps,
+        "research_dossier": research_dossier,
+        "experience_alignment_matrix": alignment_matrix,
+    }
+    history_item = {
+        "id": run_id,
+        "company": result["company"],
+        "role": result["role"],
+        "jd": jd_text,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "docx_url": f"/api/download/{run_id}/docx",
+        "pdf_url": f"/api/download/{run_id}/pdf" if result["pdf_path"] else None,
+        "preview_url": f"/api/preview/{run_id}/pdf" if result["pdf_path"] else None,
+        "docx_path": result["docx_path"],
+        "pdf_path": result["pdf_path"],
+        "structured_resume": result["structured_resume"],
+        "profile": profile,
+        "jd_intelligence": jd_intelligence,
+        "metadata": result.get("metadata", {}),
+        "research_dossier": research_dossier,
+        "company_research": research_dossier.get("target_company", {}),
+        "experience_alignment_matrix": alignment_matrix,
+        "research_sources": research_dossier.get("sources", []),
+        "research_version": research_dossier.get("research_version"),
+        "api_key_available": bool(api_key or os.environ.get("OPENAI_API_KEY")),
+        "skip_pdf": False,
+        "versions": [version],
+        "active_version_id": "v1",
+        "analysis": analysis,
+        "keyword_gaps": keyword_gaps,
+        "user_proof": [],
+        "playground_notes": [{"type": "campaign_agent", "campaign_id": campaign.get("id"), "lead_id": lead.get("id")}],
+    }
+    add_history_item(email, history_item)
+    lead["resume_run_id"] = run_id
+    lead["resume_status"] = "ready"
+    lead["stage"] = "resume_ready"
+    lead["analysis"] = analysis
+    lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    return history_item
 
 
 BAD_HISTORY_METADATA = {
@@ -1844,11 +2261,17 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, {"items": get_history_items(email)})
             return
 
+        if parsed.path == "/api/campaigns" or parsed.path.startswith("/api/campaigns/"):
+            self.serve_campaigns(parsed.path, parsed.query)
+            return
+
         if parsed.path == "/api/config":
             json_response(self, HTTPStatus.OK, {
                 "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
                 "research_enabled": research_enabled(),
+                "campaign_agent_enabled": campaign_agent_enabled(),
+                "discovery_enabled": discovery_enabled(),
                 "research_version": RESEARCH_VERSION,
                 "sentry_configured": monitoring_enabled(),
                 "sentry_frontend_dsn": os.environ.get("SENTRY_FRONTEND_DSN", ""),
@@ -1860,6 +2283,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "storage": {
                     "data_dir": str(DATA_DIR),
                     "history_exists": HISTORY_FILE.exists(),
+                    "campaigns_exists": CAMPAIGNS_FILE.exists(),
                     "output_root": str(OUTPUT_ROOT),
                     "output_root_exists": OUTPUT_ROOT.exists(),
                 },
@@ -1871,6 +2295,8 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
                 "research_enabled": research_enabled(),
+                "campaign_agent_enabled": campaign_agent_enabled(),
+                "discovery_enabled": discovery_enabled(),
                 "research_version": RESEARCH_VERSION,
                 "sentry_configured": monitoring_enabled(),
                 "build_commit": BUILD_COMMIT,
@@ -1878,6 +2304,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "storage": {
                     "data_dir": str(DATA_DIR),
                     "history_exists": HISTORY_FILE.exists(),
+                    "campaigns_exists": CAMPAIGNS_FILE.exists(),
                     "output_root": str(OUTPUT_ROOT),
                     "output_root_exists": OUTPUT_ROOT.exists(),
                 },
@@ -1894,6 +2321,7 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                 "storage": {
                     "data_dir": str(DATA_DIR),
                     "history_exists": HISTORY_FILE.exists(),
+                    "campaigns_exists": CAMPAIGNS_FILE.exists(),
                     "output_root": str(OUTPUT_ROOT),
                     "output_root_exists": OUTPUT_ROOT.exists(),
                 },
@@ -1941,6 +2369,9 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
                     result = save_profile(email, body.get("profile", {}))
                 json_response(self, HTTPStatus.OK, result)
                 return
+            if parsed.path == "/api/campaigns" or parsed.path.startswith("/api/campaigns/") or parsed.path.startswith("/api/leads/"):
+                self.handle_campaign_action(parsed.path)
+                return
             if parsed.path.startswith("/api/resume/"):
                 self.handle_resume_action(parsed.path)
                 return
@@ -1950,6 +2381,129 @@ class ResumeForgeHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             capture_monitoring_exception(exc, request_id=self.request_id, route=parsed.path, method="POST")
             self.send_api_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc), exc.__class__.__name__)
+
+    def serve_campaigns(self, path: str, query_string: str = "") -> None:
+        query = parse_qs(query_string)
+        email = query.get("email", [""])[0]
+        parts = path.strip("/").split("/")
+        if path == "/api/campaigns":
+            json_response(self, HTTPStatus.OK, {
+                "enabled": campaign_agent_enabled(),
+                "discovery_enabled": discovery_enabled(),
+                "campaigns": get_campaigns(email),
+            })
+            return
+        if len(parts) >= 3 and parts[:2] == ["api", "campaigns"]:
+            campaign_id = parts[2]
+            data = load_campaigns()
+            _, campaign = find_campaign_mut(data, campaign_id, email or None)
+            if not campaign:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            if len(parts) == 3:
+                json_response(self, HTTPStatus.OK, {"campaign": campaign_snapshot(campaign)})
+                return
+            if len(parts) == 4 and parts[3] == "leads":
+                json_response(self, HTTPStatus.OK, {"leads": campaign.get("leads", [])})
+                return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def handle_campaign_action(self, path: str) -> None:
+        body = read_json_body(self)
+        email = body.get("email", "")
+        api_key = (body.get("api_key") or "").strip() or None
+        parts = path.strip("/").split("/")
+
+        if path == "/api/campaigns":
+            with monitor_span("campaign.create", "Create Campaign Agent campaign", request_id=self.request_id):
+                campaign = create_campaign(email, body.get("campaign", body))
+            json_response(self, HTTPStatus.OK, {"campaign": campaign, "enabled": campaign_agent_enabled()})
+            return
+
+        if len(parts) >= 3 and parts[:2] == ["api", "campaigns"]:
+            campaign_id = parts[2]
+            if len(parts) == 4 and parts[3] == "leads":
+                with monitor_span("campaign.lead.add", "Add manual campaign lead", campaign_id=campaign_id):
+                    lead = add_campaign_lead(email, campaign_id, body.get("lead", body))
+                json_response(self, HTTPStatus.OK, {"lead": lead})
+                return
+            if len(parts) == 4 and parts[3] == "discover":
+                data = load_campaigns()
+                _, campaign = find_campaign_mut(data, campaign_id, email or None)
+                if not campaign:
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                discovered, errors = discover_campaign_leads(campaign)
+                if discovered:
+                    message = f"Discovered {len(discovered)} jobs from configured public ATS boards."
+                elif errors:
+                    message = "Discovery checked configured boards, but no jobs were imported."
+                elif not (campaign.get("goal") or {}).get("source_boards"):
+                    message = "Add Greenhouse, Lever, or Ashby board slugs to this campaign for automated discovery, or add manual leads."
+                else:
+                    message = "No new jobs found from configured public ATS boards."
+                campaign_event(campaign, "discovery_checked", message)
+                save_campaigns(data)
+                json_response(self, HTTPStatus.OK, {
+                    "campaign": campaign_snapshot(campaign),
+                    "discovered": discovered,
+                    "errors": errors,
+                    "message": message,
+                    "discovery_enabled": discovery_enabled() or bool((campaign.get("goal") or {}).get("source_boards")),
+                })
+                return
+
+        if len(parts) == 4 and parts[:2] == ["api", "leads"]:
+            lead_id, action = parts[2], parts[3]
+            data = load_campaigns()
+            owner, campaign, lead = find_lead_mut(data, lead_id, email or None)
+            if not lead:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            profile = get_profile(owner or email)
+            if action == "score":
+                with monitor_span("campaign.lead.score", "Score campaign lead", lead_id=lead_id):
+                    score_campaign_lead(lead, profile, api_key=api_key)
+                    campaign_event(campaign, "lead_scored", f"Scored {lead.get('company')} - {lead.get('role')} at {lead.get('fit_score')}.")
+                save_campaigns(data)
+                json_response(self, HTTPStatus.OK, {"lead": lead, "campaign": campaign_snapshot(campaign)})
+                return
+            if action == "research":
+                with monitor_span("campaign.lead.research", "Research campaign lead", lead_id=lead_id):
+                    research_campaign_lead(lead, profile, api_key=api_key)
+                    campaign_event(campaign, "lead_researched", f"Built research and alignment for {lead.get('company')} - {lead.get('role')}.")
+                save_campaigns(data)
+                json_response(self, HTTPStatus.OK, {"lead": lead, "campaign": campaign_snapshot(campaign)})
+                return
+            if action == "prepare-resume":
+                with monitor_span("campaign.lead.prepare_resume", "Prepare campaign lead resume", lead_id=lead_id):
+                    if lead.get("stage") == "discovered":
+                        score_campaign_lead(lead, profile, api_key=api_key)
+                    if lead.get("stage") == "scored":
+                        research_campaign_lead(lead, profile, api_key=api_key)
+                    history_item = generate_resume_for_campaign_lead(owner or email, campaign, lead, profile, api_key=api_key)
+                    campaign_event(campaign, "resume_ready", f"Prepared resume package for {lead.get('company')} - {lead.get('role')}.")
+                save_campaigns(data)
+                json_response(self, HTTPStatus.OK, {"lead": lead, "campaign": campaign_snapshot(campaign), "history_item": history_item})
+                return
+            if action == "approve":
+                lead["approval_status"] = "approved"
+                lead["stage"] = "approved"
+                lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                campaign_event(campaign, "lead_approved", f"Approved {lead.get('company')} - {lead.get('role')} for manual submission.")
+                save_campaigns(data)
+                json_response(self, HTTPStatus.OK, {"lead": lead, "campaign": campaign_snapshot(campaign)})
+                return
+            if action == "outcome":
+                outcome = str(body.get("outcome", "") or "outcome").strip()
+                lead["outcome"] = outcome
+                lead["stage"] = "outcome"
+                lead["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                campaign_event(campaign, "lead_outcome", f"Recorded outcome for {lead.get('company')} - {lead.get('role')}: {outcome}.")
+                save_campaigns(data)
+                json_response(self, HTTPStatus.OK, {"lead": lead, "campaign": campaign_snapshot(campaign)})
+                return
+        self.send_api_error(HTTPStatus.NOT_FOUND, "Campaign API route not found.", "NotFoundError")
 
     def handle_generate(self) -> dict:
         content_type = self.headers.get("Content-Type", "")

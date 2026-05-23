@@ -75,6 +75,9 @@ const state = {
   buildCommit: "",
   buildTimestamp: "",
   storage: {},
+  campaigns: [],
+  campaignAgentEnabled: true,
+  discoveryEnabled: false,
   googleLoaded: false,
   profile: null,
   identityScenesStarted: false,
@@ -95,6 +98,9 @@ function emitHoneState() {
       buildCommit: state.buildCommit,
       buildTimestamp: state.buildTimestamp,
       storage: state.storage,
+      campaigns: state.campaigns,
+      campaignAgentEnabled: state.campaignAgentEnabled,
+      discoveryEnabled: state.discoveryEnabled,
     },
   }));
 }
@@ -110,6 +116,9 @@ function getHoneSnapshot() {
     buildCommit: state.buildCommit,
     buildTimestamp: state.buildTimestamp,
     storage: state.storage,
+    campaigns: state.campaigns,
+    campaignAgentEnabled: state.campaignAgentEnabled,
+    discoveryEnabled: state.discoveryEnabled,
   };
 }
 
@@ -507,6 +516,7 @@ function logout() {
   window.HoneDraftProfile = null;
   state.user = null;
   state.history = [];
+  state.campaigns = [];
   state.profile = null;
   document.body.classList.remove("signed-in");
   localStorage.removeItem("identity-os-user");
@@ -551,6 +561,7 @@ async function saveGoogleProfile(credentialResponse) {
   state.history = result.items || [];
   renderHistory();
   await loadProfile();
+  await loadCampaigns();
   closeSignin();
   document.querySelector("#workspace")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -619,6 +630,19 @@ async function loadHistory() {
   const result = await apiFetch(`/api/history?email=${encodeURIComponent(state.user.email)}`, {}, "loading your history");
   state.history = result.items || [];
   renderHistory();
+  emitHoneState();
+}
+
+async function loadCampaigns() {
+  if (!state.user?.email) {
+    state.campaigns = [];
+    emitHoneState();
+    return;
+  }
+  const result = await apiFetch(`/api/campaigns?email=${encodeURIComponent(state.user.email)}`, {}, "loading Campaign Agent");
+  state.campaignAgentEnabled = result.enabled !== false;
+  state.discoveryEnabled = Boolean(result.discovery_enabled);
+  state.campaigns = result.campaigns || [];
   emitHoneState();
 }
 
@@ -1185,6 +1209,50 @@ async function regenerateFromWorkspace({ runId, instruction = "", apiKey = "" })
   return item;
 }
 
+async function createCampaignFromWorkspace(campaign) {
+  const result = await apiFetch("/api/campaigns", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: state.user?.email || "", campaign }),
+  }, "creating Campaign Agent campaign");
+  await loadCampaigns();
+  return result.campaign;
+}
+
+async function addCampaignLeadFromWorkspace(campaignId, lead) {
+  const result = await apiFetch(`/api/campaigns/${campaignId}/leads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: state.user?.email || "", lead }),
+  }, "adding a campaign lead");
+  await loadCampaigns();
+  return result.lead;
+}
+
+async function discoverCampaignFromWorkspace(campaignId) {
+  const result = await apiFetch(`/api/campaigns/${campaignId}/discover`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: state.user?.email || "" }),
+  }, "checking campaign discovery");
+  await loadCampaigns();
+  return result;
+}
+
+async function actOnCampaignLead(leadId, action, extra = {}) {
+  const result = await apiFetch(`/api/leads/${leadId}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: state.user?.email || "", ...extra }),
+  }, `updating campaign lead`);
+  if (action === "prepare-resume" && result.history_item) {
+    await loadHistory();
+  }
+  await loadCampaigns();
+  emitHoneState();
+  return result;
+}
+
 window.HoneBridge = {
   getState: getHoneSnapshot,
   saveProfile: saveProfileFromWorkspace,
@@ -1192,6 +1260,15 @@ window.HoneBridge = {
   openResume: openResumeFromWorkspace,
   activateVersion,
   regenerate: regenerateFromWorkspace,
+  loadCampaigns,
+  createCampaign: createCampaignFromWorkspace,
+  addCampaignLead: addCampaignLeadFromWorkspace,
+  discoverCampaign: discoverCampaignFromWorkspace,
+  scoreCampaignLead: (leadId) => actOnCampaignLead(leadId, "score"),
+  researchCampaignLead: (leadId) => actOnCampaignLead(leadId, "research"),
+  prepareCampaignResume: (leadId) => actOnCampaignLead(leadId, "prepare-resume"),
+  approveCampaignLead: (leadId) => actOnCampaignLead(leadId, "approve"),
+  recordCampaignOutcome: (leadId, outcome) => actOnCampaignLead(leadId, "outcome", { outcome }),
   logout,
 };
 
@@ -1292,6 +1369,8 @@ apiFetch("/api/config", {}, "loading app configuration")
     }
     state.openaiConfigured = Boolean(config.openai_configured);
     state.sentryConfigured = Boolean(config.sentry_configured);
+    state.campaignAgentEnabled = config.campaign_agent_enabled !== false;
+    state.discoveryEnabled = Boolean(config.discovery_enabled);
     state.buildCommit = config.build_commit || "";
     state.buildTimestamp = config.build_timestamp || "";
     state.storage = config.storage || {};
@@ -1305,6 +1384,7 @@ apiFetch("/api/config", {}, "loading app configuration")
   .catch(() => {});
 loadHistory();
 loadProfile();
+loadCampaigns();
 window.addEventListener("resize", resize);
 window.addEventListener("scroll", () => {
   const progress = document.querySelector("#scroll-progress");

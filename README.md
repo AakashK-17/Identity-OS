@@ -16,6 +16,7 @@ The product is designed as a job-search memory system, not a one-off resume gene
 - **Resume Playground** lets users regenerate a resume version with proof, safe JD additions, or chat-style refinement.
 - **Version history** preserves older resume versions instead of overwriting them.
 - **Searchable job history** stores company, role, JD, timestamp, DOCX, PDF, analysis, and playground notes.
+- **Campaign Agent** is a separate premium workspace for goal-based job-search campaigns, lead scoring, company research, resume-package preparation, approvals, and outcomes.
 
 ## Current Product Flow
 
@@ -28,6 +29,18 @@ The product is designed as a job-search memory system, not a one-off resume gene
 7. The app opens the Resume Playground for that run.
 8. User previews the PDF, reviews scores and keyword strategy, then regenerates new versions when needed.
 9. Every run is saved automatically into history.
+
+## Premium Campaign Agent
+
+Campaign Agent is separate from the standard resume tool. The manual workspace remains unchanged, while premium users can create a campaign such as "Senior Data Scientist in healthtech within 3 months," add job leads, score them against the saved profile, research the company/role, prepare a resume package, approve applications, and track outcomes.
+
+Campaign data is stored separately in:
+
+```text
+data/campaigns.json
+```
+
+V1 supports manual JD leads plus safe public ATS board discovery from Greenhouse, Lever, and Ashby board slugs. It does not directly scrape LinkedIn or Indeed.
 
 ## Tech Stack
 
@@ -78,6 +91,17 @@ POST /api/resume/{run_id}/proof
 POST /api/resume/{run_id}/regenerate
 POST /api/resume/{run_id}/score
 POST /api/resume/{run_id}/activate
+GET  /api/campaigns
+POST /api/campaigns
+GET  /api/campaigns/{campaign_id}
+POST /api/campaigns/{campaign_id}/discover
+GET  /api/campaigns/{campaign_id}/leads
+POST /api/campaigns/{campaign_id}/leads
+POST /api/leads/{lead_id}/score
+POST /api/leads/{lead_id}/research
+POST /api/leads/{lead_id}/prepare-resume
+POST /api/leads/{lead_id}/approve
+POST /api/leads/{lead_id}/outcome
 ```
 
 ## Environment Variables
@@ -100,6 +124,13 @@ RESEARCH_ENABLED=false
 OPENAI_WEB_SEARCH_MODEL=gpt-4o-mini
 OPENAI_WEB_SEARCH_TOOL=web_search_preview
 RESEARCH_CACHE_TTL_DAYS=30
+CAMPAIGN_AGENT_ENABLED=true
+DISCOVERY_ENABLED=false
+AGENT_TICK_SECRET=optional_future_worker_secret
+ADZUNA_APP_ID=optional_future_aggregator_id
+ADZUNA_APP_KEY=optional_future_aggregator_key
+SERPAPI_API_KEY=optional_future_google_jobs_key
+JSEARCH_API_KEY=optional_future_jobs_api_key
 SENTRY_DSN=your_sentry_backend_dsn_here
 SENTRY_FRONTEND_DSN=your_sentry_browser_dsn_here
 SENTRY_ENVIRONMENT=development

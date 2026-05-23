@@ -937,12 +937,214 @@ function DataControlsView({ snapshot }) {
   );
 }
 
+function CampaignAgentView({ snapshot, onOpenDrawer, onOpenResume }) {
+  const campaigns = snapshot.campaigns || [];
+  const [selectedId, setSelectedId] = React.useState(campaigns[0]?.id || "");
+  const [busy, setBusy] = React.useState("");
+  const [message, setMessage] = React.useState("");
+  const [campaignDraft, setCampaignDraft] = React.useState({
+    target_role: "",
+    industries: "",
+    company_stage: "",
+    location: "",
+    timeline: "",
+    constraints: "",
+    excluded_companies: "",
+    source_boards: "",
+  });
+  const [leadDraft, setLeadDraft] = React.useState({ source_url: "", location: "", jd: "" });
+  const selected = campaigns.find((campaign) => campaign.id === selectedId) || campaigns[0];
+  const profileReady = profileHasContent(activeDraftProfile(snapshot));
+
+  React.useEffect(() => {
+    if (!selectedId && campaigns[0]?.id) setSelectedId(campaigns[0].id);
+  }, [campaigns.length, selectedId]);
+
+  async function createCampaign(event) {
+    event.preventDefault();
+    if (!campaignDraft.target_role.trim()) {
+      setMessage("Add a target role before creating a campaign.");
+      return;
+    }
+    setBusy("campaign");
+    setMessage("Creating Campaign Agent workspace...");
+    try {
+      const campaign = await window.HoneBridge.createCampaign(campaignDraft);
+      setSelectedId(campaign.id);
+      setMessage("Campaign created. Add a JD lead or run discovery when sources are configured.");
+      setCampaignDraft({ target_role: "", industries: "", company_stage: "", location: "", timeline: "", constraints: "", excluded_companies: "", source_boards: "" });
+    } catch (error) {
+      setMessage(error.message || "Could not create campaign.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function addLead(event) {
+    event.preventDefault();
+    if (!selected?.id) return;
+    if (!leadDraft.jd.trim()) {
+      setMessage("Paste a job description for this campaign lead.");
+      return;
+    }
+    setBusy("lead");
+    setMessage("Adding lead to the campaign queue...");
+    try {
+      await window.HoneBridge.addCampaignLead(selected.id, leadDraft);
+      setLeadDraft({ source_url: "", location: "", jd: "" });
+      setMessage("Lead added. Score it before preparing a resume.");
+    } catch (error) {
+      setMessage(error.message || "Could not add lead.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runCampaignAction(label, action) {
+    setBusy(label);
+    setMessage(`${label}...`);
+    try {
+      const result = await action();
+      if (result?.history_item) {
+        setMessage("Resume package is ready and saved to normal history.");
+      } else if (result?.message) {
+        setMessage(result.message);
+      } else {
+        setMessage("Campaign updated.");
+      }
+    } catch (error) {
+      setMessage(error.message || "Campaign action failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  if (!snapshot.campaignAgentEnabled) {
+    return (
+      <section className="campaign-page">
+        <div className="campaign-hero card premium-preview">
+          <div className="card-label"><b>Premium</b><span>Campaign Agent</span></div>
+          <h1>Let Hone run the search while you approve the moves.</h1>
+          <p>Campaign Agent is the premium job-search layer: discovery, fit scoring, company research, tailored resume packages, and outcome learning. Your current resume workspace remains unchanged.</p>
+          <button className="btn spark" type="button">Join premium preview</button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="campaign-page">
+      <div className="campaign-hero card">
+        <div>
+          <div className="card-label"><b>Premium workspace</b><span>Campaign Agent</span></div>
+          <h1>Turn a job search goal into a managed pipeline.</h1>
+          <p>Define the role you want, add leads, score fit against your saved profile, prepare tailored resume packages, and track outcomes without changing the manual resume tool.</p>
+        </div>
+        <div className="campaign-status-grid">
+          <div><b>{campaigns.length}</b><span>campaigns</span></div>
+          <div><b>{selected?.lead_count || 0}</b><span>leads</span></div>
+          <div><b>{snapshot.discoveryEnabled ? "on" : "manual"}</b><span>discovery</span></div>
+        </div>
+      </div>
+
+      {!profileReady && (
+        <div className="card campaign-warning">
+          <div className="card-label"><b>Foundation required</b><span>profile</span></div>
+          <p>Campaign Agent uses your saved base profile for scoring and resume packages. Add it once before preparing campaign resumes.</p>
+          <button className="btn spark small" onClick={onOpenDrawer}><Icon.Save/> Edit base resume</button>
+        </div>
+      )}
+
+      <div className="campaign-grid">
+        <form className="card campaign-form" onSubmit={createCampaign}>
+          <div className="card-label"><b>Setup</b><span>campaign goal</span></div>
+          <ProfileField label="Target role" value={campaignDraft.target_role} onChange={(value) => setCampaignDraft({ ...campaignDraft, target_role: value })} placeholder="Senior Data Scientist"/>
+          <ProfileField label="Industries" value={campaignDraft.industries} onChange={(value) => setCampaignDraft({ ...campaignDraft, industries: value })} placeholder="Healthtech, fintech, B2B SaaS"/>
+          <ProfileField label="Company stage / size" value={campaignDraft.company_stage} onChange={(value) => setCampaignDraft({ ...campaignDraft, company_stage: value })} placeholder="Series B, 100-500 employees"/>
+          <ProfileField label="Location / remote" value={campaignDraft.location} onChange={(value) => setCampaignDraft({ ...campaignDraft, location: value })} placeholder="Remote US, NYC, Boston"/>
+          <ProfileField label="Timeline" value={campaignDraft.timeline} onChange={(value) => setCampaignDraft({ ...campaignDraft, timeline: value })} placeholder="3 months"/>
+          <ProfileField label="Must-have constraints" value={campaignDraft.constraints} onChange={(value) => setCampaignDraft({ ...campaignDraft, constraints: value })} textarea placeholder="Salary floor, visa needs, domain preferences, no consulting..."/>
+          <ProfileField label="Excluded companies" value={campaignDraft.excluded_companies} onChange={(value) => setCampaignDraft({ ...campaignDraft, excluded_companies: value })} placeholder="Companies or industries to avoid"/>
+          <ProfileField label="Public ATS board slugs" value={campaignDraft.source_boards} onChange={(value) => setCampaignDraft({ ...campaignDraft, source_boards: value })} textarea placeholder="greenhouse:stripe, lever:linear, ashby:openai"/>
+          <button className="btn spark" disabled={busy === "campaign"}><Icon.Spark/>{busy === "campaign" ? "Creating..." : "Create campaign"}</button>
+        </form>
+
+        <div className="campaign-main">
+          <div className="card campaign-tabs">
+            <div className="card-label"><b>Campaigns</b><span>{campaigns.length}</span></div>
+            <div className="campaign-chip-row">
+              {campaigns.length ? campaigns.map((campaign) => (
+                <button key={campaign.id} className={"campaign-chip" + (selected?.id === campaign.id ? " active" : "")} onClick={() => setSelectedId(campaign.id)}>
+                  <b>{campaign.goal?.target_role || "Campaign"}</b>
+                  <span>{campaign.lead_count || 0} leads · avg {campaign.avg_fit_score || 0}</span>
+                </button>
+              )) : <p className="muted">Create your first campaign to start building a pipeline.</p>}
+            </div>
+            {selected && (
+              <div className="campaign-actions">
+                <button className="btn ghost small" onClick={() => runCampaignAction("Checking discovery", () => window.HoneBridge.discoverCampaign(selected.id))}>Run discovery check</button>
+                <span>{snapshot.discoveryEnabled ? "Structured discovery is enabled." : "Discovery is manual until source APIs are configured."}</span>
+              </div>
+            )}
+          </div>
+
+          {selected && (
+            <form className="card campaign-lead-form" onSubmit={addLead}>
+              <div className="card-label"><b>Add lead</b><span>manual JD</span></div>
+              <div className="profile-grid two">
+                <ProfileField label="Job URL" value={leadDraft.source_url} onChange={(value) => setLeadDraft({ ...leadDraft, source_url: value })} placeholder="https://..."/>
+                <ProfileField label="Location" value={leadDraft.location} onChange={(value) => setLeadDraft({ ...leadDraft, location: value })} placeholder="Remote, NY, CA"/>
+              </div>
+              <ProfileField label="Job description" value={leadDraft.jd} onChange={(value) => setLeadDraft({ ...leadDraft, jd: value })} textarea placeholder="Paste the full JD. Hone will extract company, role, signals, and fit."/>
+              <button className="btn ink small" disabled={busy === "lead"}>Add lead</button>
+            </form>
+          )}
+
+          <div className="campaign-leads">
+            {(selected?.leads || []).map((lead) => (
+              <article className="card campaign-lead" key={lead.id}>
+                <div className="lead-head">
+                  <div>
+                    <div className="card-label"><b>{lead.company || "Unknown Company"}</b><span>{lead.stage || "discovered"}</span></div>
+                    <h3>{lead.role || "Target Role"}</h3>
+                    <p>{lead.location || lead.source || "Manual lead"}</p>
+                  </div>
+                  <div className="lead-score"><b>{lead.fit_score || 0}</b><span>fit</span></div>
+                </div>
+                {lead.fit_summary && (
+                  <div className="lead-terms">
+                    {(lead.fit_summary.matched_terms || []).slice(0, 6).map((term) => <span className="kw-chip placed" key={term}>{term}</span>)}
+                    {(lead.fit_summary.weak_terms || []).slice(0, 4).map((term) => <span className="kw-chip weak muted-pill" key={term}>{term}</span>)}
+                  </div>
+                )}
+                <div className="lead-actions">
+                  <button className="btn ghost small" onClick={() => runCampaignAction("Scoring lead", () => window.HoneBridge.scoreCampaignLead(lead.id))}>Score</button>
+                  <button className="btn ghost small" onClick={() => runCampaignAction("Researching lead", () => window.HoneBridge.researchCampaignLead(lead.id))}>Research</button>
+                  <button className="btn spark small" disabled={!profileReady} onClick={() => runCampaignAction("Preparing resume", () => window.HoneBridge.prepareCampaignResume(lead.id))}>Prepare resume</button>
+                  <button className="btn ink small" onClick={() => runCampaignAction("Approving lead", () => window.HoneBridge.approveCampaignLead(lead.id))}>Approve</button>
+                  {lead.resume_run_id && <button className="btn ghost small" onClick={() => window.HoneBridge.openResume(lead.resume_run_id).then(onOpenResume)}>Open package</button>}
+                </div>
+              </article>
+            ))}
+            {selected && !(selected.leads || []).length && (
+              <div className="card empty-history"><span>No leads yet</span><p>Add a manual JD lead. Automated discovery can be connected later through ATS and aggregator APIs.</p></div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {message && <div className="campaign-toast">{message}</div>}
+    </section>
+  );
+}
+
 function SystemView() {
   return (
     <section>
       <div className="sec-head"><h2>System</h2><span className="meta">Product and account pages</span></div>
       <div className="sys-grid">
         <button className="card link-card" onClick={() => goView("profile")}><div className="card-label"><b>Profile</b><span>base resume</span></div><p>Edit the saved foundation used for every resume generation.</p></button>
+        <button className="card link-card" onClick={() => goView("campaigns")}><div className="card-label"><b>Campaign Agent</b><span>premium</span></div><p>Create a managed job-search campaign with lead scoring, research, resume packages, and outcomes.</p></button>
         <button className="card link-card" onClick={() => goView("settings")}><div className="card-label"><b>Settings</b><span>account</span></div><p>Manage sign out, runtime health, and workspace preferences.</p></button>
         <button className="card link-card" onClick={() => goView("about")}><div className="card-label"><b>About</b><span>Hone</span></div><p>See what the product does and how the workspace is structured.</p></button>
         <button className="card link-card" onClick={() => goView("privacy")}><div className="card-label"><b>Privacy Policy</b><span>trust</span></div><p>Review how Hone stores profile, JD, generated files, analytics, and monitoring data.</p></button>
@@ -954,4 +1156,4 @@ function SystemView() {
   );
 }
 
-Object.assign(window, { NewApplicationHero, WorkspaceHeader, ScorePanel, PreviewPanel, PlaygroundPanel, RecentStrip, WorkspaceView, HistoryView, AppCard, BaseResumeDrawer, ProfileView, SettingsView, AboutView, PrivacyView, TermsView, SupportView, DataControlsView, SystemView });
+Object.assign(window, { NewApplicationHero, WorkspaceHeader, ScorePanel, PreviewPanel, PlaygroundPanel, RecentStrip, WorkspaceView, HistoryView, AppCard, BaseResumeDrawer, ProfileView, SettingsView, AboutView, PrivacyView, TermsView, SupportView, DataControlsView, CampaignAgentView, SystemView });

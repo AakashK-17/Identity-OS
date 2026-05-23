@@ -20,6 +20,10 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: CAMPAIGN_AGENT_ENABLED
+        value: "true"
+      - key: DISCOVERY_ENABLED
+        value: "false"
       - key: SENTRY_DSN
         sync: false
       - key: SENTRY_FRONTEND_DSN

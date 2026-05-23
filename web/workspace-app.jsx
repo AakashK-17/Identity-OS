@@ -4,12 +4,13 @@ const { useState: uS, useEffect: uE } = React;
 
 const primaryTabs = [
   ["workspace", "Workspace", <Icon.Folder/>, "W"],
+  ["campaigns", "Campaign Agent", <Icon.Spark/>, "A"],
   ["history", "History", <Icon.History/>, "H"],
   ["profile", "Profile", <Icon.Save/>, "P"],
   ["system", "System", <Icon.System/>, "S"],
 ];
 
-const routeViews = new Set(["workspace", "history", "profile", "settings", "system", "about", "privacy", "terms", "support", "data"]);
+const routeViews = new Set(["workspace", "campaigns", "history", "profile", "settings", "system", "about", "privacy", "terms", "support", "data"]);
 
 function Nav({ view, onView, onOpenDrawer, user }) {
   const displayName = user?.name || user?.email || "Workspace";
@@ -56,9 +57,9 @@ function MobileNav({ view, onView }) {
   return (
     <nav className="mobile-nav" aria-label="Workspace navigation">
       <Tab id="workspace" view={view} onView={onView} icon={<Icon.Folder/>}>Workspace</Tab>
+      <Tab id="campaigns" view={view} onView={onView} icon={<Icon.Spark/>}>Agent</Tab>
       <Tab id="history" view={view} onView={onView} icon={<Icon.History/>}>History</Tab>
       <Tab id="profile" view={view} onView={onView} icon={<Icon.Save/>}>Profile</Tab>
-      <Tab id="system" view={view} onView={onView} icon={<Icon.System/>}>System</Tab>
     </nav>
   );
 }
@@ -90,6 +91,7 @@ function App() {
     const onKey = (e) => {
       if (e.target.matches('input, textarea')) return;
       if (e.key === 'w' || e.key === 'W') setView('workspace');
+      if (e.key === 'a' || e.key === 'A') setView('campaigns');
       if (e.key === 'h' || e.key === 'H') setView('history');
       if (e.key === 's' || e.key === 'S') setView('system');
       if (e.key === 'p' || e.key === 'P') setView('profile');
@@ -155,6 +157,7 @@ function App() {
               snapshot={snapshot}
             />
           )}
+          {view === 'campaigns' && <CampaignAgentView snapshot={snapshot} onOpenDrawer={() => setDrawerOpen(true)} onOpenResume={() => setView('workspace')}/>}
           {view === 'history' && <HistoryView snapshot={snapshot} onOpenResume={() => setView('workspace')}/>}
           {view === 'profile' && <ProfileView snapshot={snapshot} onOpenDrawer={() => setDrawerOpen(true)}/>}
           {view === 'settings' && <SettingsView snapshot={snapshot}/>}
